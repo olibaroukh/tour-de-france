@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Tour de France — Optical Center</title>
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" type="image/png" href="icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Tour de France">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#0D0D0D;--bg2:#1a1a1a;--bg3:#222;--bg4:#2a2a2a;
+  --red:#CC1719;--red2:rgba(204,23,25,0.15);--red3:rgba(204,23,25,0.3);
+  --text:#F0EDE6;--muted:#888;--border:rgba(255,255,255,0.08);
+  --green:#2d9e2d;--orange:#d4820a;
+}
+html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#111010 70%,#0A0A0A 100%);background-attachment:fixed;color:var(--text);font-family:'Barlow',sans-serif;font-size:15px;overflow-x:hidden}
+#app{max-width:640px;margin:0 auto;min-height:100vh;padding-bottom:76px;position:relative}
+
+/* header */
+#app-header{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border);position:sticky;top:0;background:rgba(13,13,13,0.92);backdrop-filter:blur(6px);z-index:20}
+#app-header img{height:30px;width:30px;border-radius:6px}
+#app-header .title{font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:600;letter-spacing:.5px;flex:1}
+#whoami{background:var(--bg4);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Barlow',sans-serif;font-size:12px;padding:6px 8px}
+
+/* nav */
+#bottom-nav{position:fixed;left:0;right:0;bottom:0;display:flex;max-width:640px;margin:0 auto;background:rgba(13,13,13,0.96);border-top:1px solid var(--border);backdrop-filter:blur(6px);z-index:30}
+.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:10px 0 12px;cursor:pointer;color:var(--muted);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;border:none;background:transparent;font-family:'Barlow',sans-serif}
+.nav-item.active{color:var(--red)}
+.nav-item .ic{font-size:18px;line-height:1}
+
+/* views */
+.view{display:none;padding:16px}
+.view.active{display:block}
+
+/* passage cards */
+.summary-bar{display:flex;gap:10px;margin-bottom:16px}
+.summary-card{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:12px;text-align:center}
+.summary-card .n{font-family:'Barlow Condensed',sans-serif;font-size:24px;font-weight:700;color:var(--red)}
+.summary-card .l{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-top:2px}
+
+.passage-card{background:var(--bg3);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:12px;cursor:pointer}
+.passage-card .pc-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.passage-card .pc-titre{font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:700}
+.passage-card .pc-dates{color:var(--muted);font-size:12px;margin-top:2px}
+.badge{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.3px;padding:4px 8px;border-radius:20px;white-space:nowrap}
+.badge.brouillon{background:var(--bg4);color:var(--muted)}
+.badge.confirme{background:var(--red2);color:var(--red)}
+.badge.termine{background:rgba(45,158,45,0.15);color:var(--green)}
+.pc-meta{display:flex;gap:14px;margin-top:10px;font-size:11px;color:var(--muted)}
+
+.empty-state{text-align:center;padding:60px 20px;color:var(--muted)}
+.empty-state .ic{font-size:40px;margin-bottom:10px}
+
+/* fab */
+#fab{position:fixed;right:20px;bottom:88px;width:56px;height:56px;border-radius:50%;background:var(--red);color:#fff;font-size:28px;border:none;box-shadow:0 4px 14px rgba(204,23,25,0.45);z-index:25;cursor:pointer;display:flex;align-items:center;justify-content:center}
+
+/* form sections */
+.form-section{background:var(--bg3);border:1px solid var(--border);border-radius:14px;margin-bottom:14px;overflow:hidden}
+.form-section > summary{list-style:none;cursor:pointer;padding:14px 16px;display:flex;align-items:center;gap:10px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:15px;text-transform:uppercase;letter-spacing:.4px}
+.form-section > summary::-webkit-details-marker{display:none}
+.form-section > summary .ic{color:var(--red)}
+.form-section > summary::after{content:'▾';margin-left:auto;color:var(--muted);font-size:12px}
+.form-section[open] > summary::after{content:'▴'}
+.form-section .body{padding:0 16px 16px}
+
+.field-group{margin-bottom:12px}
+.field-group label{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:5px}
+.field-group input,.field-group textarea,.field-group select{background:var(--bg4);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:14px;color:var(--text);font-family:'Barlow',sans-serif;width:100%;resize:none}
+.field-row{display:flex;gap:10px}
+.field-row > .field-group{flex:1}
+
+.chip-row{display:flex;flex-wrap:wrap;gap:8px}
+.chip{background:var(--bg4);border:1px solid var(--border);border-radius:20px;padding:7px 14px;font-size:13px;cursor:pointer;color:var(--text)}
+.chip.selected{background:var(--red2);border-color:var(--red3);color:var(--red);font-weight:600}
+.chip .rm{margin-left:6px;opacity:.7}
+
+.btn-primary{background:var(--red);color:#fff;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:600;font-family:'Barlow',sans-serif;width:100%;cursor:pointer;letter-spacing:.3px}
+.btn-secondary{background:transparent;color:var(--text);border:1px solid var(--border);border-radius:10px;padding:12px;font-size:14px;font-weight:500;font-family:'Barlow',sans-serif;width:100%;cursor:pointer}
+.btn-add{background:var(--red2);border:1px solid var(--red3);color:var(--red);border-radius:8px;padding:9px 14px;font-size:13px;font-weight:600;font-family:'Barlow',sans-serif;cursor:pointer;white-space:nowrap}
+.btn-icon{background:transparent;border:none;color:var(--muted);font-size:16px;cursor:pointer;padding:4px 8px}
+
+/* jour / etape */
+.jour-block{border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:12px;background:var(--bg4)}
+.jour-block .jb-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.jour-block .jb-head .jb-title{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:15px;flex:1}
+.etape-row{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px}
+.etape-row .er-top{display:flex;gap:8px;align-items:center}
+.etape-row .er-nom{font-weight:600;font-size:13.5px;flex:1}
+.etape-row .er-times{display:flex;gap:6px;font-size:11px;color:var(--muted)}
+.etape-row .er-sub{font-size:11.5px;color:var(--muted);margin-top:4px}
+.type-tag{font-size:9px;text-transform:uppercase;letter-spacing:.3px;padding:2px 6px;border-radius:5px;background:var(--bg4);color:var(--muted)}
+
+/* magasins tab */
+.search-box{margin-bottom:14px}
+.search-box input{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:11px 14px;font-size:14px;color:var(--text);font-family:'Barlow',sans-serif;width:100%}
+.magasin-row{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:11px 14px;margin-bottom:8px;display:flex;align-items:center;gap:10px}
+.magasin-row .mr-nom{font-weight:600;font-size:13.5px;flex:1}
+.magasin-row .mr-code{font-size:11px;color:var(--muted)}
+.magasin-row .mr-an{font-size:10.5px;color:var(--muted)}
+
+/* modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:50;display:flex;align-items:flex-end;justify-content:center}
+.modal-overlay.hidden{display:none}
+.modal{background:var(--bg2);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:640px;max-height:88vh;overflow-y:auto}
+.modal-title{font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:700;margin-bottom:16px}
+
+.toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:var(--bg4);color:var(--text);padding:10px 16px;border-radius:10px;font-size:13px;z-index:60;border:1px solid var(--border)}
+.loading-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--red);animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="app-header">
+    <img src="icon.png" alt="Tour de France" onerror="this.style.display='none'">
+    <div class="title">Tour de France</div>
+    <select id="whoami"></select>
+  </div>
+
+  <!-- ===================== VUE PASSAGES ===================== -->
+  <div class="view active" id="view-passages">
+    <div class="summary-bar">
+      <div class="summary-card"><div class="n" id="sum-visited">–</div><div class="l">Succ. visitées</div></div>
+      <div class="summary-card"><div class="n" id="sum-total">119</div><div class="l">Succursales</div></div>
+      <div class="summary-card"><div class="n" id="sum-pct">–</div><div class="l">Couverture</div></div>
+    </div>
+    <div id="passages-list"></div>
+  </div>
+
+  <!-- ===================== VUE MAGASINS ===================== -->
+  <div class="view" id="view-magasins">
+    <div class="search-box">
+      <input type="text" id="magasin-search" placeholder="Rechercher un magasin, une ville, un animateur…">
+    </div>
+    <div id="magasins-list"></div>
+  </div>
+
+  <!-- ===================== VUE FORMULAIRE PASSAGE ===================== -->
+  <div class="view" id="view-form">
+    <div id="form-container"></div>
+  </div>
+
+</div>
+
+<button id="fab" onclick="openNewPassage()">+</button>
+
+<div id="bottom-nav">
+  <button class="nav-item active" data-view="passages" onclick="switchView('passages')">
+    <span class="ic">🧭</span><span>Passages</span>
+  </button>
+  <button class="nav-item" data-view="magasins" onclick="switchView('magasins')">
+    <span class="ic">🏬</span><span>Magasins</span>
+  </button>
+</div>
+
+<div class="modal-overlay hidden" id="magasin-picker-overlay" onclick="if(event.target===this)closeMagasinPicker()">
+  <div class="modal">
+    <div class="modal-title">Ajouter une étape</div>
+    <div class="field-group">
+      <input type="text" id="picker-search" placeholder="Rechercher un magasin…" oninput="renderPickerResults()">
+    </div>
+    <div class="chip-row" style="margin-bottom:12px">
+      <div class="chip selected" id="picker-tab-succ" onclick="setPickerTab('succ')">Succursale</div>
+      <div class="chip" id="picker-tab-franchise" onclick="setPickerTab('franchise')">+ Franchise</div>
+      <div class="chip" id="picker-tab-autre" onclick="setPickerTab('autre')">Autre étape</div>
+    </div>
+    <div id="picker-body"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast" style="display:none"></div>
+
+<script>
+window.APP_VERSION = '2026.08.26-1';
+
+// =====================================================================
+// CONFIG
+// =====================================================================
+// À ajuster : URL brute GitHub du magasins.csv (même référentiel que Bilan de Passage).
+const CSV_URL = localStorage.getItem('tdf_csv_url') ||
+  'https://raw.githubusercontent.com/olibaroukh/bilan-passage/main/magasins.csv';
+// À ajuster une fois le Worker Tour de France déployé (voir worker.js fourni séparément).
+const API_BASE = localStorage.getItem('tdf_api_base') || 'https://tour-de-france-api.olibaroukh.workers.dev';
+
+const PARTICIPANTS_HABITUELS = ['Olivier', 'Laurent Levy'];
+
+// =====================================================================
+// ÉTAT
+// =====================================================================
+const state = {
+  magasins: [],       // depuis magasins.csv
+  magasinsByCode: {},
+  passages: [],        // résumés
+  currentPassage: null, // objet en cours d'édition (formulaire)
+  pickerTab: 'succ',
+  pickerTargetJourIdx: null,
+};
+
+// =====================================================================
+// UTILITAIRES
+// =====================================================================
+function toast(msg, ms = 2500) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.display = 'block';
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => { el.style.display = 'none'; }, ms);
+}
+
+function uid() {
+  return (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Math.random().toString(36).slice(2));
+}
+
+function fmtDate(iso) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function dayCount(dateDebut, dateFin) {
+  if (!dateDebut || !dateFin) return 1;
+  const a = new Date(dateDebut), b = new Date(dateFin);
+  return Math.max(1, Math.round((b - a) / 86400000) + 1);
+}
+
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim().length);
+  const headers = lines[0].split(';').map(h => h.trim());
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(';');
+    if (!cols[0] || !cols[0].trim()) continue; // ignore lignes vides en fin de fichier
+    const row = {};
+    headers.forEach((h, idx) => { row[h] = (cols[idx] || '').trim(); });
+    rows.push(row);
+  }
+  return rows;
+}
+
+// Corrige le motif d'encodage connu du référentiel : "éME"/"éRES" -> "ÈME"/"ÈRES" en toute-capitale.
+function fixLibelle(s) {
+  if (!s) return s;
+  return s.replace(/é(ME|RES)\b/g, 'È$1');
+}
+
+function titleCaseLibelle(s) {
+  const fixed = fixLibelle(s || '');
+  return fixed.split(' ').map(w =>
+    w.length > 2 ? w.charAt(0) + w.slice(1).toLowerCase() : w
+  ).join(' ');
+}
+
+// =====================================================================
+// CHARGEMENT MAGASINS
+// =====================================================================
+async function loadMagasins() {
+  try {
+    const res = await fetch(CSV_URL, { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const text = await res.text();
+    state.magasins = parseCSV(text);
+    state.magasinsByCode = {};
+    state.magasins.forEach(m => { state.magasinsByCode[m.code] = m; });
+  } catch (e) {
+    console.error('Chargement magasins.csv échoué', e);
+    toast('⚠ Référentiel magasins indisponible — vérifier CSV_URL dans les réglages');
+  }
+}
+
+// =====================================================================
+// WHOAMI (sélecteur local, sans authentification)
+// =====================================================================
+function initWhoami() {
+  const sel = document.getElementById('whoami');
+  sel.innerHTML = PARTICIPANTS_HABITUELS.map(n => `<option value="${n}">${n}</option>`).join('');
+  const saved = localStorage.getItem('tdf_whoami');
+  if (saved && PARTICIPANTS_HABITUELS.includes(saved)) sel.value = saved;
+  sel.onchange = () => localStorage.setItem('tdf_whoami', sel.value);
+  if (!saved) localStorage.setItem('tdf_whoami', sel.value);
+}
+function whoami() { return localStorage.getItem('tdf_whoami') || PARTICIPANTS_HABITUELS[0]; }
+
+// =====================================================================
+// NAVIGATION
+// =====================================================================
+function switchView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-' + name).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.view === name));
+  document.getElementById('fab').style.display = (name === 'passages') ? 'flex' : 'none';
+  if (name === 'magasins') renderMagasinsList();
+  if (name === 'passages') renderPassagesList();
+}
+
+// =====================================================================
+// VUE PASSAGES — liste + compteur
+// =====================================================================
+async function loadPassages() {
+  try {
+    const res = await fetch(`${API_BASE}/api/passages`);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    state.passages = await res.json();
+  } catch (e) {
+    console.error('Chargement passages échoué', e);
+    state.passages = state.passages || [];
+    toast('⚠ Impossible de contacter le serveur (Worker/D1)');
+  }
+  renderPassagesList();
+  renderSummary();
+}
+
+function renderSummary() {
+  // Placeholder simple : sera enrichi une fois le suivi "magasin visité" branché sur les étapes réelles.
+  const total = state.magasins.length || 119;
+  document.getElementById('sum-total').textContent = total;
+  document.getElementById('sum-visited').textContent = '–';
+  document.getElementById('sum-pct').textContent = '–';
+}
+
+function renderPassagesList() {
+  const el = document.getElementById('passages-list');
+  if (!state.passages.length) {
+    el.innerHTML = `<div class="empty-state"><div class="ic">🗺️</div>
+      <div>Aucun passage pour l'instant.</div>
+      <div style="font-size:12px;margin-top:4px">Touchez + pour créer votre premier passage.</div></div>`;
+    return;
+  }
+  el.innerHTML = state.passages.map(p => `
+    <div class="passage-card" onclick="openPassageDetail('${p.id}')">
+      <div class="pc-top">
+        <div>
+          <div class="pc-titre">${escapeHtml(p.titre)}</div>
+          <div class="pc-dates">${fmtDate(p.date_debut)}${p.date_debut !== p.date_fin ? ' → ' + fmtDate(p.date_fin) : ''}</div>
+        </div>
+        <div class="badge ${p.statut}">${p.statut}</div>
+      </div>
+      <div class="pc-meta">
+        <span>${dayCount(p.date_debut, p.date_fin)} jour(s)</span>
+        <span>${escapeHtml(p.created_by || '—')}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+function escapeHtml(s) {
+  return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// =====================================================================
+// VUE MAGASINS
+// =====================================================================
+function renderMagasinsList(filter) {
+  const q = (filter ?? document.getElementById('magasin-search').value ?? '').toLowerCase();
+  const rows = state.magasins.filter(m => {
+    if (!q) return true;
+    return (m.libelle + ' ' + m.animateur + ' ' + m.code).toLowerCase().includes(q);
+  });
+  const el = document.getElementById('magasins-list');
+  if (!rows.length) {
+    el.innerHTML = `<div class="empty-state"><div class="ic">🔍</div><div>Aucun résultat.</div></div>`;
+    return;
+  }
+  el.innerHTML = rows.map(m => `
+    <div class="magasin-row">
+      <div style="flex:1">
+        <div class="mr-nom">${escapeHtml(titleCaseLibelle(m.libelle))}</div>
+        <div class="mr-an">${escapeHtml(m.animateur || '—')}${m.manager && m.manager !== '0' ? ' · ' + escapeHtml(m.manager) : ' · Non renseigné'}</div>
+      </div>
+      <div class="mr-code">#${escapeHtml(m.code)}</div>
+    </div>
+  `).join('');
+}
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('magasin-search').addEventListener('input', () => renderMagasinsList());
+});
+
+// =====================================================================
+// FORMULAIRE NOUVEAU / ÉDITION PASSAGE
+// =====================================================================
+function emptyPassage() {
+  return {
+    id: null,
+    titre: '',
+    date_debut: '',
+    date_fin: '',
+    statut: 'brouillon',
+    transport_mode: '',
+    transport: {},
+    hotel_nom: '', hotel_adresse: '', hotel_tel: '',
+    participants: PARTICIPANTS_HABITUELS.map(n => ({ nom: n, type: 'habituel' })),
+    jours: [],
+    created_by: whoami(),
+  };
+}
+
+function openNewPassage() {
+  state.currentPassage = emptyPassage();
+  switchView('form');
+  renderForm();
+}
+
+async function openPassageDetail(id) {
+  toast('Chargement…');
+  try {
+    const res = await fetch(`${API_BASE}/api/passages/${id}`);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    state.currentPassage = await res.json();
+  } catch (e) {
+    toast('⚠ Chargement du passage échoué');
+    return;
+  }
+  switchView('form');
+  renderForm();
+}
+
+function syncJoursWithDates() {
+  const p = state.currentPassage;
+  if (!p.date_debut || !p.date_fin) return;
+  const n = dayCount(p.date_debut, p.date_fin);
+  const dates = [];
+  const start = new Date(p.date_debut);
+  for (let i = 0; i < n; i++) {
+    const d = new Date(start); d.setDate(start.getDate() + i);
+    dates.push(d.toISOString().slice(0, 10));
+  }
+  // conserve les étapes déjà saisies pour les jours existants, ajoute/retire des jours vides sinon
+  const newJours = dates.map((date, i) => p.jours[i] ? { ...p.jours[i], date } : { date, etapes: [] });
+  p.jours = newJours;
+}
+
+function renderForm() {
+  const p = state.currentPassage;
+  const isEdit = !!p.id;
+  const html = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+      <button class="btn-icon" onclick="cancelForm()">✕</button>
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:19px;font-weight:700;flex:1">
+        ${isEdit ? 'Modifier le passage' : 'Nouveau passage'}
+      </div>
+      ${isEdit ? `<button class="btn-icon" onclick="deleteCurrentPassage()" title="Supprimer">🗑</button>` : ''}
+    </div>
+
+    <details class="form-section" open>
+      <summary><span class="ic">📋</span> Infos générales</summary>
+      <div class="body">
+        <div class="field-group">
+          <label>Titre du passage</label>
+          <input type="text" id="f-titre" value="${escapeHtml(p.titre)}" placeholder="Ex. Grenoble & alentours">
+        </div>
+        <div class="field-row">
+          <div class="field-group">
+            <label>Date début</label>
+            <input type="date" id="f-date-debut" value="${p.date_debut}">
+          </div>
+          <div class="field-group">
+            <label>Date fin</label>
+            <input type="date" id="f-date-fin" value="${p.date_fin}">
+          </div>
+        </div>
+        <div class="field-group">
+          <label>Statut</label>
+          <select id="f-statut">
+            ${['brouillon','confirme','termine'].map(s => `<option value="${s}" ${p.statut===s?'selected':''}>${s}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+    </details>
+
+    <details class="form-section">
+      <summary><span class="ic">👥</span> Participants</summary>
+      <div class="body">
+        <div class="chip-row" id="f-participants"></div>
+        <div class="field-row" style="margin-top:10px">
+          <div class="field-group" style="flex:1"><input type="text" id="f-invite-nom" placeholder="+ Invité (ex. Sacha Assola)"></div>
+          <button class="btn-add" onclick="addInvite()">Ajouter</button>
+        </div>
+      </div>
+    </details>
+
+    <details class="form-section">
+      <summary><span class="ic">🚆</span> Transport</summary>
+      <div class="body">
+        <div class="chip-row" id="f-transport-mode"></div>
+        <div id="f-transport-details" style="margin-top:12px"></div>
+      </div>
+    </details>
+
+    <details class="form-section">
+      <summary><span class="ic">🏨</span> Hébergement</summary>
+      <div class="body">
+        <div class="field-group"><label>Nom de l'hôtel</label><input type="text" id="f-hotel-nom" value="${escapeHtml(p.hotel_nom)}"></div>
+        <div class="field-group"><label>Adresse</label><input type="text" id="f-hotel-adresse" value="${escapeHtml(p.hotel_adresse)}"></div>
+        <div class="field-group"><label>Téléphone</label><input type="text" id="f-hotel-tel" value="${escapeHtml(p.hotel_tel)}"></div>
+      </div>
+    </details>
+
+    <details class="form-section" open>
+      <summary><span class="ic">🗓️</span> Jours &amp; étapes</summary>
+      <div class="body" id="f-jours"></div>
+    </details>
+
+    <button class="btn-primary" onclick="savePassage()" style="margin-bottom:10px">💾 Enregistrer</button>
+    ${isEdit ? `<button class="btn-secondary" onclick="generatePDF()">📄 Générer le PDF</button>` : ''}
+  `;
+  document.getElementById('form-container').innerHTML = html;
+
+  document.getElementById('f-date-debut').addEventListener('change', (e) => { p.date_debut = e.target.value; syncJoursWithDates(); renderJours(); });
+  document.getElementById('f-date-fin').addEventListener('change', (e) => { p.date_fin = e.target.value; syncJoursWithDates(); renderJours(); });
+
+  renderParticipants();
+  renderTransport();
+  renderJours();
+}
+
+function cancelForm() {
+  state.currentPassage = null;
+  switchView('passages');
+  loadPassages();
+}
+
+// ---- Participants ----
+function renderParticipants() {
+  const p = state.currentPassage;
+  const el = document.getElementById('f-participants');
+  el.innerHTML = p.participants.map((part, i) => `
+    <div class="chip selected">${escapeHtml(part.nom)}
+      ${part.type !== 'habituel' ? `<span class="rm" onclick="removeParticipant(${i})">✕</span>` : ''}
+    </div>
+  `).join('');
+}
+function addInvite() {
+  const input = document.getElementById('f-invite-nom');
+  const nom = input.value.trim();
+  if (!nom) return;
+  state.currentPassage.participants.push({ nom, type: 'invite' });
+  input.value = '';
+  renderParticipants();
+}
+function removeParticipant(i) {
+  state.currentPassage.participants.splice(i, 1);
+  renderParticipants();
+}
+function addAnimateurIfMissing(nomAnimateur) {
+  if (!nomAnimateur) return;
+  const p = state.currentPassage;
+  const already = p.participants.some(x => x.nom.toLowerCase() === nomAnimateur.toLowerCase());
+  if (!already) {
+    p.participants.push({ nom: titleCaseLibelle(nomAnimateur), type: 'animateur' });
+    renderParticipants();
+    toast(`${titleCaseLibelle(nomAnimateur)} ajouté aux participants (animateur du magasin)`);
+  }
+}
+
+// ---- Transport ----
+const TRANSPORT_MODES = [
+  { key: '', label: 'Aucun (Paris/RP)' },
+  { key: 'train', label: 'Train' },
+  { key: 'voiture', label: 'Voiture' },
+  { key: 'avion', label: 'Avion' },
+];
+function renderTransport() {
+  const p = state.currentPassage;
+  const el = document.getElementById('f-transport-mode');
+  el.innerHTML = TRANSPORT_MODES.map(m => `
+    <div class="chip ${p.transport_mode === m.key ? 'selected' : ''}" onclick="setTransportMode('${m.key}')">${m.label}</div>
+  `).join('');
+  renderTransportDetails();
+}
+function setTransportMode(key) {
+  state.currentPassage.transport_mode = key;
+  renderTransport();
+}
+function renderTransportDetails() {
+  const p = state.currentPassage;
+  const el = document.getElementById('f-transport-details');
+  if (!p.transport_mode) { el.innerHTML = ''; return; }
+  const t = p.transport || {};
+  if (p.transport_mode === 'train') {
+    el.innerHTML = `
+      <div class="field-group"><label>N° train aller / Gare et heure départ → arrivée</label>
+        <input type="text" id="tr-aller" value="${escapeHtml(t.aller||'')}" placeholder="Ex. TGV 6911 · Paris 10h14 → Grenoble 13h13"></div>
+      <div class="field-group"><label>N° train retour / Gare et heure départ → arrivée</label>
+        <input type="text" id="tr-retour" value="${escapeHtml(t.retour||'')}" placeholder="Ex. TGV 6922 · Grenoble 16h45 → Paris 19h46"></div>
+      <div class="field-group"><label>Référence réservation</label><input type="text" id="tr-ref" value="${escapeHtml(t.ref||'')}"></div>
+      <div class="field-group"><label>Sièges par participant</label><textarea id="tr-sieges" rows="2" placeholder="Ex. Sacha : 268 · Olivier : 272">${escapeHtml(t.sieges||'')}</textarea></div>
+    `;
+  } else if (p.transport_mode === 'voiture') {
+    el.innerHTML = `<div class="field-group"><label>Notes (véhicule, conducteur…)</label><textarea id="tr-notes" rows="2">${escapeHtml(t.notes||'')}</textarea></div>`;
+  } else if (p.transport_mode === 'avion') {
+    el.innerHTML = `
+      <div class="field-group"><label>Vol aller</label><input type="text" id="tr-aller" value="${escapeHtml(t.aller||'')}"></div>
+      <div class="field-group"><label>Vol retour</label><input type="text" id="tr-retour" value="${escapeHtml(t.retour||'')}"></div>
+    `;
+  }
+  el.querySelectorAll('input,textarea').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const t2 = state.currentPassage.transport || {};
+      t2[inp.id.replace('tr-', '')] = inp.value;
+      state.currentPassage.transport = t2;
+    });
+  });
+}
+
+// ---- Jours & étapes ----
+function renderJours() {
+  const p = state.currentPassage;
+  const el = document.getElementById('f-jours');
+  if (!p.date_debut || !p.date_fin) {
+    el.innerHTML = `<div style="color:var(--muted);font-size:13px">Renseignez les dates ci-dessus pour générer les jours du passage.</div>`;
+    return;
+  }
+  el.innerHTML = p.jours.map((jour, ji) => `
+    <div class="jour-block">
+      <div class="jb-head">
+        <div class="jb-title">Jour ${ji + 1} — ${fmtDate(jour.date)}</div>
+      </div>
+      <div id="etapes-${ji}"></div>
+      <button class="btn-add" onclick="openMagasinPicker(${ji})">+ Ajouter une étape</button>
+    </div>
+  `).join('');
+  p.jours.forEach((jour, ji) => renderEtapes(ji));
+}
+
+function renderEtapes(ji) {
+  const jour = state.currentPassage.jours[ji];
+  const el = document.getElementById(`etapes-${ji}`);
+  if (!jour.etapes || !jour.etapes.length) {
+    el.innerHTML = `<div style="color:var(--muted);font-size:12px;margin-bottom:8px">Aucune étape.</div>`;
+    return;
+  }
+  el.innerHTML = jour.etapes.map((e, ei) => `
+    <div class="etape-row">
+      <div class="er-top">
+        <span class="type-tag">${e.type}</span>
+        <div class="er-nom">${escapeHtml(e.nom)}</div>
+        <button class="btn-icon" onclick="removeEtape(${ji},${ei})">✕</button>
+      </div>
+      <div class="er-times" style="margin-top:6px">
+        <input type="time" value="${e.heure_debut||''}" style="width:90px" onchange="updateEtape(${ji},${ei},'heure_debut',this.value)">
+        →
+        <input type="time" value="${e.heure_fin||''}" style="width:90px" onchange="updateEtape(${ji},${ei},'heure_fin',this.value)">
+      </div>
+      ${e.adresse ? `<div class="er-sub">${escapeHtml(e.adresse)}</div>` : ''}
+      <input type="text" placeholder="Trajet vers l'étape suivante (ex. ~20 min voiture · 20 km)" value="${escapeHtml(e.trajet_suivant||'')}"
+        style="margin-top:6px;background:var(--bg4);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:11.5px;color:var(--text);width:100%"
+        onchange="updateEtape(${ji},${ei},'trajet_suivant',this.value)">
+    </div>
+  `).join('');
+}
+function updateEtape(ji, ei, field, value) {
+  state.currentPassage.jours[ji].etapes[ei][field] = value;
+}
+function removeEtape(ji, ei) {
+  state.currentPassage.jours[ji].etapes.splice(ei, 1);
+  renderEtapes(ji);
+}
+
+// ---- Sélecteur de magasin/franchise/étape libre ----
+function openMagasinPicker(jourIdx) {
+  state.pickerTargetJourIdx = jourIdx;
+  state.pickerTab = 'succ';
+  document.getElementById('magasin-picker-overlay').classList.remove('hidden');
+  document.getElementById('picker-search').value = '';
+  setPickerTab('succ');
+}
+function closeMagasinPicker() {
+  document.getElementById('magasin-picker-overlay').classList.add('hidden');
+}
+function setPickerTab(tab) {
+  state.pickerTab = tab;
+  ['succ','franchise','autre'].forEach(t =>
+    document.getElementById('picker-tab-' + t).classList.toggle('selected', t === tab));
+  renderPickerResults();
+}
+function renderPickerResults() {
+  const body = document.getElementById('picker-body');
+  const q = document.getElementById('picker-search').value.toLowerCase();
+  if (state.pickerTab === 'succ') {
+    const rows = state.magasins.filter(m => !q || (m.libelle + m.code).toLowerCase().includes(q)).slice(0, 30);
+    body.innerHTML = rows.map(m => `
+      <div class="magasin-row" style="cursor:pointer" onclick="pickSuccursale('${m.code}')">
+        <div style="flex:1"><div class="mr-nom">${escapeHtml(titleCaseLibelle(m.libelle))}</div>
+        <div class="mr-an">${escapeHtml(m.animateur||'—')}</div></div>
+        <div class="mr-code">#${escapeHtml(m.code)}</div>
+      </div>
+    `).join('') || `<div style="color:var(--muted);font-size:13px;padding:10px 0">Aucun résultat.</div>`;
+  } else if (state.pickerTab === 'franchise') {
+    body.innerHTML = `
+      <div class="field-group"><label>Nom</label><input type="text" id="pk-fr-nom"></div>
+      <div class="field-group"><label>Adresse</label><input type="text" id="pk-fr-adresse"></div>
+      <div class="field-group"><label>Ville</label><input type="text" id="pk-fr-ville"></div>
+      <button class="btn-primary" onclick="pickFranchise()">Ajouter cette franchise</button>
+    `;
+  } else {
+    body.innerHTML = `
+      <div class="chip-row" style="margin-bottom:10px">
+        ${['repas','soiree','hotel','autre'].map(t => `<div class="chip" id="pk-type-${t}" onclick="selectFreeType('${t}')">${t}</div>`).join('')}
+      </div>
+      <div class="field-group"><label>Libellé</label><input type="text" id="pk-free-nom" placeholder="Ex. Pause déjeuner"></div>
+      <div class="field-group"><label>Notes</label><input type="text" id="pk-free-notes"></div>
+      <button class="btn-primary" onclick="pickFreeEtape()">Ajouter cette étape</button>
+    `;
+    window._pkFreeType = 'autre';
+  }
+}
+function selectFreeType(t) {
+  window._pkFreeType = t;
+  document.querySelectorAll('[id^=pk-type-]').forEach(el => el.classList.remove('selected'));
+  document.getElementById('pk-type-' + t).classList.add('selected');
+}
+function addEtapeToCurrentJour(etape) {
+  const ji = state.pickerTargetJourIdx;
+  const jour = state.currentPassage.jours[ji];
+  if (!jour.etapes) jour.etapes = [];
+  // heure de début = heure de fin de l'étape précédente si disponible, sinon vide ; fin = +2h par défaut
+  const prev = jour.etapes[jour.etapes.length - 1];
+  const debut = prev && prev.heure_fin ? prev.heure_fin : '';
+  let fin = '';
+  if (debut) {
+    const [h, m] = debut.split(':').map(Number);
+    const d = new Date(); d.setHours(h + 2, m, 0, 0);
+    fin = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+  }
+  jour.etapes.push({ heure_debut: debut, heure_fin: fin, visite: 0, cr_note: '', cr_photo: '', ...etape });
+  renderEtapes(ji);
+  closeMagasinPicker();
+}
+function pickSuccursale(code) {
+  const m = state.magasinsByCode[code];
+  addEtapeToCurrentJour({
+    type: 'magasin',
+    magasin_code: code,
+    nom: titleCaseLibelle(m.libelle),
+    adresse: '', ville: '',
+  });
+  addAnimateurIfMissing(m.animateur);
+}
+function pickFranchise() {
+  const nom = document.getElementById('pk-fr-nom').value.trim();
+  if (!nom) return toast('Nom requis');
+  addEtapeToCurrentJour({
+    type: 'franchise',
+    nom,
+    adresse: document.getElementById('pk-fr-adresse').value.trim(),
+    ville: document.getElementById('pk-fr-ville').value.trim(),
+  });
+}
+function pickFreeEtape() {
+  const nom = document.getElementById('pk-free-nom').value.trim();
+  if (!nom) return toast('Libellé requis');
+  addEtapeToCurrentJour({
+    type: window._pkFreeType || 'autre',
+    nom,
+    notes: document.getElementById('pk-free-notes').value.trim(),
+  });
+}
+
+// =====================================================================
+// ENREGISTREMENT
+// =====================================================================
+function collectFormIntoState() {
+  const p = state.currentPassage;
+  p.titre = document.getElementById('f-titre').value.trim();
+  p.date_debut = document.getElementById('f-date-debut').value;
+  p.date_fin = document.getElementById('f-date-fin').value;
+  p.statut = document.getElementById('f-statut').value;
+  p.hotel_nom = document.getElementById('f-hotel-nom').value.trim();
+  p.hotel_adresse = document.getElementById('f-hotel-adresse').value.trim();
+  p.hotel_tel = document.getElementById('f-hotel-tel').value.trim();
+}
+
+async function savePassage() {
+  collectFormIntoState();
+  const p = state.currentPassage;
+  if (!p.titre || !p.date_debut || !p.date_fin) {
+    toast('⚠ Titre et dates sont requis'); return;
+  }
+  if (!p.created_by) p.created_by = whoami();
+
+  const method = p.id ? 'PUT' : 'POST';
+  const url = p.id ? `${API_BASE}/api/passages/${p.id}` : `${API_BASE}/api/passages`;
+  try {
+    const res = await fetch(url, {
+      method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p)
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (!p.id) p.id = data.id;
+    toast('✅ Passage enregistré');
+    renderForm(); // affiche maintenant le bouton "Générer le PDF"
+  } catch (e) {
+    console.error(e);
+    toast('⚠ Échec de l\'enregistrement (Worker/D1 indisponible)');
+  }
+}
+
+async function deleteCurrentPassage() {
+  const p = state.currentPassage;
+  if (!p.id) return;
+  if (!confirm('Supprimer définitivement ce passage ?')) return;
+  try {
+    await fetch(`${API_BASE}/api/passages/${p.id}`, { method: 'DELETE' });
+    toast('Passage supprimé');
+  } catch (e) { console.error(e); }
+  cancelForm();
+}
+
+// =====================================================================
+// GÉNÉRATION PDF (jsPDF — Helvetica, charte Optical Center)
+// =====================================================================
+const OC_RED = [204, 23, 25];
+const OC_BLACK = [13, 13, 13];
+
+function pdfSafe(s) {
+  // Helvetica standard jsPDF = Latin-1 ; on neutralise les caractères hors plage.
+  return (s || '').normalize('NFC').replace(/[^\x00-\xFF]/g, '?');
+}
+
+function generatePDF() {
+  const p = state.currentPassage;
+  if (!p.jours || !p.jours.length) { toast('Ajoutez au moins un jour avant de générer le PDF'); return; }
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const W = 297, H = 210, mar = 10;
+
+  const nJours = p.jours.length;
+  // 1-2 jours : tout tient sur une page en colonnes. 3 jours : page 1 = jour 1-2, page 2 = jour 3 + récap.
+  const joursParPage = nJours <= 2 ? nJours : 2;
+
+  drawHeader(doc, p, W, mar);
+  layoutJours(doc, p.jours.slice(0, joursParPage), W, H, mar, joursParPage);
+
+  if (nJours > joursParPage) {
+    doc.addPage();
+    drawHeader(doc, p, W, mar, true);
+    layoutJours(doc, p.jours.slice(joursParPage), W, H, mar, nJours - joursParPage);
+  }
+
+  doc.save(`Passage-${(p.titre||'tournee').replace(/[^a-z0-9]+/gi,'-')}.pdf`);
+}
+
+function drawHeader(doc, p, W, mar, suite) {
+  doc.setFillColor(...OC_RED);
+  doc.rect(0, 0, W, 16, 'F');
+  doc.setFillColor(...OC_BLACK);
+  doc.rect(0, 0, 18, 16, 'F');
+  doc.setTextColor(255,255,255);
+  doc.setFont('helvetica','bold'); doc.setFontSize(13);
+  doc.text(pdfSafe('TOURNÉE RÉSEAU — ISÈRE'.normalize('NFC')), 22, 7);
+  doc.setFont('helvetica','normal'); doc.setFontSize(9);
+  doc.text(pdfSafe(`${p.titre}${suite ? ' (suite)' : ''} — ${fmtDate(p.date_debut)} au ${fmtDate(p.date_fin)}`), 22, 12.5);
+  doc.setTextColor(...OC_BLACK);
+}
+
+function layoutJours(doc, jours, W, H, mar, nCols) {
+  const colW = (W - 2*mar - (nCols-1)*8) / nCols;
+  let x0 = mar, y0 = 24;
+  jours.forEach((jour, i) => {
+    const x = x0 + i * (colW + 8);
+    let y = y0;
+    doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(...OC_RED);
+    doc.text(pdfSafe(`JOUR — ${fmtDate(jour.date)}`), x, y);
+    doc.setDrawColor(...OC_BLACK); doc.setLineWidth(0.5);
+    doc.line(x, y+2, x+colW, y+2);
+    y += 8;
+    doc.setTextColor(...OC_BLACK);
+    (jour.etapes||[]).forEach(e => {
+      doc.setFont('helvetica','bold'); doc.setFontSize(9);
+      const time = [e.heure_debut, e.heure_fin].filter(Boolean).join(' - ');
+      doc.setTextColor(...OC_RED);
+      doc.text(pdfSafe(time), x, y);
+      doc.setTextColor(...OC_BLACK);
+      doc.text(pdfSafe(e.nom || ''), x + 26, y);
+      y += 4.2;
+      if (e.adresse) {
+        doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(90,90,90);
+        doc.text(pdfSafe(e.adresse), x + 26, y);
+        doc.setTextColor(...OC_BLACK);
+        y += 4;
+      }
+      if (e.trajet_suivant) {
+        doc.setFont('helvetica','italic'); doc.setFontSize(7); doc.setTextColor(140,140,140);
+        doc.text(pdfSafe('→ ' + e.trajet_suivant), x + 26, y);
+        doc.setTextColor(...OC_BLACK);
+        y += 4.5;
+      } else {
+        y += 1.5;
+      }
+    });
+  });
+}
+
+// =====================================================================
+// SERVICE WORKER (PWA)
+// =====================================================================
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(e => console.error('SW registration failed', e));
+}
+
+// =====================================================================
+// INIT
+// =====================================================================
+(async function init() {
+  initWhoami();
+  await loadMagasins();
+  await loadPassages();
+})();
+</script>
+</body>
+</html>
