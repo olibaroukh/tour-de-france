@@ -120,6 +120,25 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 .toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:var(--bg4);color:var(--text);padding:10px 16px;border-radius:10px;font-size:13px;z-index:60;border:1px solid var(--border)}
 .loading-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--red);animation:pulse 1s infinite}
 @keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
+
+/* saisie écran compte-rendu */
+.saisie-header{background:var(--bg3);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:16px}
+.saisie-header .sh-nom{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:20px}
+.saisie-header .sh-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.saisie-section-title{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:16px;text-transform:uppercase;letter-spacing:.4px;margin:18px 0 10px;display:flex;align-items:center;gap:8px}
+.saisie-section-title .ic{color:var(--red)}
+.theme-block{background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:10px}
+.theme-block .tb-title{font-weight:700;font-size:14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between}
+.theme-block textarea{width:100%;min-height:70px;background:var(--bg4);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text);font-family:'Barlow',sans-serif;font-size:13.5px}
+.photo-row{display:flex;align-items:center;gap:10px;margin-top:8px}
+.photo-thumb{width:56px;height:56px;border-radius:8px;object-fit:cover;border:1px solid var(--border)}
+.photo-btn{background:var(--bg4);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:12px;color:var(--text);cursor:pointer}
+.collab-card{background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:10px}
+.collab-card .cc-nom{font-weight:700;font-size:14.5px}
+.collab-ca-row{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.collab-ca-chip{background:var(--bg4);border-radius:7px;padding:5px 9px;font-size:11px}
+.collab-ca-chip b{color:var(--red);display:block;font-size:12.5px}
+.collab-card textarea{width:100%;min-height:60px;background:var(--bg4);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text);font-family:'Barlow',sans-serif;font-size:13.5px;margin-top:6px}
 </style>
 </head>
 <body>
@@ -161,6 +180,11 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
     <div id="form-container"></div>
   </div>
 
+  <!-- ===================== VUE SAISIE COMPTE-RENDU ÉTAPE ===================== -->
+  <div class="view" id="view-saisie">
+    <div id="saisie-container"></div>
+  </div>
+
 </div>
 
 <button id="fab" onclick="openNewPassage()">+</button>
@@ -196,7 +220,7 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 <div id="toast" class="toast" style="display:none"></div>
 
 <script>
-window.APP_VERSION = '2026.08.26-3';
+window.APP_VERSION = '2026.08.27-1';
 
 // =====================================================================
 // CONFIG
@@ -661,6 +685,7 @@ function renderEtapes(ji) {
       <div class="er-top">
         <span class="type-tag">${e.type}</span>
         <div class="er-nom">${escapeHtml(e.nom)}</div>
+        ${e.visite ? '<span class="type-tag" style="background:rgba(45,158,45,0.15);color:var(--green)">visité</span>' : ''}
         <button class="btn-icon" onclick="removeEtape(${ji},${ei})">✕</button>
       </div>
       <div class="er-times" style="margin-top:6px">
@@ -672,6 +697,8 @@ function renderEtapes(ji) {
       <input type="text" placeholder="Trajet vers l'étape suivante (ex. ~20 min voiture · 20 km)" value="${escapeHtml(e.trajet_suivant||'')}"
         style="margin-top:6px;background:var(--bg4);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:11.5px;color:var(--text);width:100%"
         onchange="updateEtape(${ji},${ei},'trajet_suivant',this.value)">
+      ${e.id && e.type === 'magasin' ? `<button class="btn-add" style="margin-top:8px" onclick="openEtapeSaisie('${e.id}')">📝 Compte-rendu de visite</button>` : ''}
+      ${!e.id ? `<div style="font-size:10.5px;color:var(--muted);margin-top:6px;font-style:italic">Enregistrez le passage pour saisir le compte-rendu de cette étape.</div>` : ''}
     </div>
   `).join('');
 }
@@ -1010,6 +1037,199 @@ async function clearCAData() {
   } catch (e) {
     console.error('Suppression CA échouée', e);
     statusEl.textContent = '⚠ Échec de la suppression';
+  }
+}
+
+// =====================================================================
+// ÉCRAN DE SAISIE — compte-rendu d'une étape (point de vente, extérieur, entretiens)
+// =====================================================================
+const saisieState = {
+  etapeId: null,
+  etape: null,
+  themesBank: [],
+  themeEntries: {},   // theme_id -> { note, photo }
+  entretiens: {},     // matricule (ou nom si pas de matricule) -> note
+  collaborateurs: [],
+};
+
+async function openEtapeSaisie(etapeId) {
+  toast('Chargement…');
+  try {
+    const res = await fetch(`${API_BASE}/api/etapes/${etapeId}/saisie`);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    saisieState.etapeId = etapeId;
+    saisieState.etape = data.etape;
+    saisieState.themesBank = data.themesBank;
+    saisieState.collaborateurs = data.collaborateurs;
+    saisieState.themeEntries = {};
+    (data.themeEntries || []).forEach(t => { saisieState.themeEntries[t.theme_id] = { note: t.note, photo: t.photo }; });
+    saisieState.entretiens = {};
+    (data.entretiens || []).forEach(e => { saisieState.entretiens[e.matricule || e.collaborateur_nom] = e.note; });
+  } catch (e) {
+    console.error(e);
+    toast('⚠ Chargement du compte-rendu échoué');
+    return;
+  }
+  switchView('saisie');
+  renderSaisieScreen();
+}
+
+function closeSaisie() {
+  switchView('form');
+}
+
+function themeSectionHtml(categorie, label, icon) {
+  const bank = saisieState.themesBank.filter(t => t.categorie === categorie);
+  const blocks = bank.map(t => {
+    const entry = saisieState.themeEntries[t.id];
+    const selected = !!entry;
+    return `
+      <div class="theme-block">
+        <div class="tb-title">
+          <span>${escapeHtml(t.nom)}</span>
+          <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);font-weight:400">
+            <input type="checkbox" ${selected ? 'checked' : ''} onchange="toggleTheme('${t.id}', this.checked)"> traité
+          </label>
+        </div>
+        ${selected ? `
+          <textarea placeholder="Notes (dictée vocale disponible via le micro du clavier)…" oninput="updateThemeNote('${t.id}', this.value)">${escapeHtml(entry.note || '')}</textarea>
+          <div class="photo-row">
+            <input type="file" accept="image/*" capture="environment" id="photo-${t.id}" style="display:none" onchange="handleThemePhoto('${t.id}', event)">
+            <button class="photo-btn" onclick="document.getElementById('photo-${t.id}').click()">📷 ${entry.photo ? 'Changer la photo' : '+ Photo (facultatif)'}</button>
+            ${entry.photo ? `<img class="photo-thumb" src="${entry.photo}">` : ''}
+          </div>
+        ` : ''}
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="saisie-section-title"><span class="ic">${icon}</span> ${label}</div>
+    ${blocks || '<div style="color:var(--muted);font-size:12.5px">Aucun thème pour l\'instant.</div>'}
+    <div class="field-row" style="margin-top:6px">
+      <div class="field-group" style="flex:1"><input type="text" id="new-theme-${categorie}" placeholder="+ Nouveau thème (ex. Kaizen, Concurrents…)"></div>
+      <button class="btn-add" onclick="addTheme('${categorie}')">Ajouter</button>
+    </div>
+  `;
+}
+
+function renderSaisieScreen() {
+  const e = saisieState.etape;
+  const container = document.getElementById('saisie-container');
+
+  const entretiensHtml = saisieState.collaborateurs.length
+    ? saisieState.collaborateurs.map(c => {
+        const key = c.matricule || c.nom;
+        const years = Object.keys(c.ca || {}).sort();
+        const caChips = years.map(y => `<div class="collab-ca-chip"><b>${c.ca[y].toLocaleString('fr-FR')} €</b>CA ${y}</div>`).join('');
+        const previYears = Object.keys(c.previsionnel || {}).sort();
+        const previChips = previYears.map(y => `<div class="collab-ca-chip"><b>${c.previsionnel[y].toLocaleString('fr-FR')} €</b>Prévi ${y}</div>`).join('');
+        const evolChip = (c.evolution_pct !== null && c.evolution_pct !== undefined)
+          ? `<div class="collab-ca-chip"><b>${(c.evolution_pct*100).toFixed(1)}%</b>Évolution</div>` : '';
+        return `
+          <div class="collab-card">
+            <div class="cc-nom">${escapeHtml(c.prenom)} ${escapeHtml(c.nom)}</div>
+            <div class="collab-ca-row">${caChips}${previChips}${evolChip}</div>
+            <textarea placeholder="Notes d'entretien (dictée vocale disponible)…" oninput="updateEntretienNote('${key}', this.value)">${escapeHtml(saisieState.entretiens[key] || '')}</textarea>
+          </div>`;
+      }).join('')
+    : `<div style="color:var(--muted);font-size:12.5px">Aucun collaborateur trouvé pour ce magasin — vérifiez que le CA a bien été importé avec le bon code site.</div>`;
+
+  container.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <button class="btn-icon" onclick="closeSaisie()">✕</button>
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:19px;font-weight:700;flex:1">Compte-rendu de visite</div>
+    </div>
+
+    <div class="saisie-header">
+      <div class="sh-nom">${escapeHtml(e.nom)}</div>
+      <div class="sh-sub">${escapeHtml(e.adresse || '')} ${e.heure_debut ? '· ' + e.heure_debut + (e.heure_fin ? '–' + e.heure_fin : '') : ''}</div>
+    </div>
+
+    ${themeSectionHtml('point_vente', 'Point de vente (~20 min)', '🏬')}
+    ${themeSectionHtml('exterieur', 'Environnement extérieur (~10 min)', '🌍')}
+
+    <div class="saisie-section-title"><span class="ic">👥</span> Entretiens individuels</div>
+    ${entretiensHtml}
+
+    <button class="btn-primary" style="margin-top:10px" onclick="saveSaisie()">✅ Valider — marquer comme visité</button>
+  `;
+}
+
+function toggleTheme(themeId, checked) {
+  if (checked) saisieState.themeEntries[themeId] = saisieState.themeEntries[themeId] || { note: '', photo: '' };
+  else delete saisieState.themeEntries[themeId];
+  renderSaisieScreen();
+}
+function updateThemeNote(themeId, value) {
+  if (saisieState.themeEntries[themeId]) saisieState.themeEntries[themeId].note = value;
+}
+function updateEntretienNote(key, value) {
+  saisieState.entretiens[key] = value;
+}
+
+async function addTheme(categorie) {
+  const input = document.getElementById(`new-theme-${categorie}`);
+  const nom = input.value.trim();
+  if (!nom) return;
+  try {
+    const res = await fetch(`${API_BASE}/api/themes`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nom, categorie })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    saisieState.themesBank.push({ id: data.id, categorie, nom, ordre: 0 });
+    saisieState.themeEntries[data.id] = { note: '', photo: '' };
+    renderSaisieScreen();
+  } catch (e) {
+    console.error(e);
+    toast('⚠ Ajout du thème échoué');
+  }
+}
+
+// Compression photo en canvas 600px JPEG qualité 0.85 (même pattern que Bilan de Passage).
+function handleThemePhoto(themeId, event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const img = new Image();
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    img.onload = () => {
+      const maxDim = 600;
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      saisieState.themeEntries[themeId].photo = dataUrl;
+      renderSaisieScreen();
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function saveSaisie() {
+  const themeEntries = Object.entries(saisieState.themeEntries).map(([theme_id, v]) => ({ theme_id, note: v.note, photo: v.photo }));
+  const entretiens = saisieState.collaborateurs.map(c => {
+    const key = c.matricule || c.nom;
+    return { matricule: c.matricule, collaborateur_nom: `${c.prenom} ${c.nom}`, note: saisieState.entretiens[key] || '' };
+  }).filter(e => e.note);
+
+  try {
+    const res = await fetch(`${API_BASE}/api/etapes/${saisieState.etapeId}/saisie`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ themeEntries, entretiens, cr_note: '' })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    toast('✅ Compte-rendu enregistré — étape marquée visitée');
+    switchView('passages');
+  } catch (e) {
+    console.error(e);
+    toast('⚠ Échec de l\'enregistrement du compte-rendu');
   }
 }
 
