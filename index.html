@@ -28,7 +28,9 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 
 /* header */
 #app-header{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border);position:sticky;top:0;background:rgba(13,13,13,0.92);backdrop-filter:blur(6px);z-index:20}
-#app-header img{height:30px;width:30px;border-radius:6px}
+#app-header img{height:28px;width:auto;mix-blend-mode:screen}
+.wm-logo{position:absolute;top:45%;left:50%;transform:translate(-50%,-50%);width:60vw;max-width:380px;opacity:0.18;pointer-events:none;z-index:0;mix-blend-mode:screen}
+.view{position:relative}
 #app-header .title{font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:600;letter-spacing:.5px;flex:1}
 #whoami{background:var(--bg4);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Barlow',sans-serif;font-size:12px;padding:6px 8px}
 
@@ -123,13 +125,14 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 <div id="app">
 
   <div id="app-header">
-    <img src="icon.png" alt="Tour de France" onerror="this.style.display='none'">
+    <img src="https://raw.githubusercontent.com/olibaroukh/bilan-passage/main/logo_oc.png" alt="Optical Center">
     <div class="title">Tour de France</div>
     <select id="whoami"></select>
   </div>
 
   <!-- ===================== VUE PASSAGES ===================== -->
   <div class="view active" id="view-passages">
+    <img class="wm-logo" src="https://raw.githubusercontent.com/olibaroukh/bilan-passage/main/logo_oc.png" alt="" aria-hidden="true">
     <div class="summary-bar">
       <div class="summary-card"><div class="n" id="sum-visited">–</div><div class="l">Succ. visitées</div></div>
       <div class="summary-card"><div class="n" id="sum-total">119</div><div class="l">Succursales</div></div>
@@ -140,6 +143,7 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 
   <!-- ===================== VUE MAGASINS ===================== -->
   <div class="view" id="view-magasins">
+    <img class="wm-logo" src="https://raw.githubusercontent.com/olibaroukh/bilan-passage/main/logo_oc.png" alt="" aria-hidden="true">
     <div class="search-box">
       <input type="text" id="magasin-search" placeholder="Rechercher un magasin, une ville, un animateur…">
     </div>
@@ -148,6 +152,7 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 
   <!-- ===================== VUE FORMULAIRE PASSAGE ===================== -->
   <div class="view" id="view-form">
+    <img class="wm-logo" src="https://raw.githubusercontent.com/olibaroukh/bilan-passage/main/logo_oc.png" alt="" aria-hidden="true">
     <div id="form-container"></div>
   </div>
 
@@ -167,6 +172,10 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 <div class="modal-overlay hidden" id="magasin-picker-overlay" onclick="if(event.target===this)closeMagasinPicker()">
   <div class="modal">
     <div class="modal-title">Ajouter une étape</div>
+    <div class="field-group">
+      <label>Heure d'arrivée</label>
+      <input type="time" id="picker-heure-arrivee">
+    </div>
     <div class="field-group">
       <input type="text" id="picker-search" placeholder="Rechercher un magasin…" oninput="renderPickerResults()">
     </div>
@@ -672,6 +681,10 @@ function openMagasinPicker(jourIdx) {
   state.pickerTab = 'succ';
   document.getElementById('magasin-picker-overlay').classList.remove('hidden');
   document.getElementById('picker-search').value = '';
+  // Pré-remplit l'heure d'arrivée suggérée = heure de fin de l'étape précédente du jour, sinon vide.
+  const jour = state.currentPassage.jours[jourIdx];
+  const prev = jour && jour.etapes && jour.etapes[jour.etapes.length - 1];
+  document.getElementById('picker-heure-arrivee').value = (prev && prev.heure_fin) ? prev.heure_fin : '';
   setPickerTab('succ');
 }
 function closeMagasinPicker() {
@@ -723,9 +736,8 @@ function addEtapeToCurrentJour(etape) {
   const ji = state.pickerTargetJourIdx;
   const jour = state.currentPassage.jours[ji];
   if (!jour.etapes) jour.etapes = [];
-  // heure de début = heure de fin de l'étape précédente si disponible, sinon vide ; fin = +2h par défaut
-  const prev = jour.etapes[jour.etapes.length - 1];
-  const debut = prev && prev.heure_fin ? prev.heure_fin : '';
+  // Heure d'arrivée saisie dans le picker ; fin = +2h par défaut, modifiable ensuite sur l'étape.
+  const debut = document.getElementById('picker-heure-arrivee').value || '';
   let fin = '';
   if (debut) {
     const [h, m] = debut.split(':').map(Number);
