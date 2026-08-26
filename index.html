@@ -55,6 +55,7 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 .passage-card .pc-dates{color:var(--muted);font-size:12px;margin-top:2px}
 .badge{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.3px;padding:4px 8px;border-radius:20px;white-space:nowrap}
 .badge.brouillon{background:var(--bg4);color:var(--muted)}
+.badge.en_cours{background:rgba(212,130,10,0.15);color:var(--orange)}
 .badge.confirme{background:var(--red2);color:var(--red)}
 .badge.termine{background:rgba(45,158,45,0.15);color:var(--green)}
 .pc-meta{display:flex;gap:14px;margin-top:10px;font-size:11px;color:var(--muted)}
@@ -349,7 +350,7 @@ function renderPassagesList() {
           <div class="pc-titre">${escapeHtml(p.titre)}</div>
           <div class="pc-dates">${fmtDate(p.date_debut)}${p.date_debut !== p.date_fin ? ' → ' + fmtDate(p.date_fin) : ''}</div>
         </div>
-        <div class="badge ${p.statut}">${p.statut}</div>
+        <div class="badge ${p.statut}">${statutLabel(p.statut)}</div>
       </div>
       <div class="pc-meta">
         <span>${dayCount(p.date_debut, p.date_fin)} jour(s)</span>
@@ -359,6 +360,9 @@ function renderPassagesList() {
   `).join('');
 }
 
+function statutLabel(s) {
+  return { brouillon: 'brouillon', en_cours: 'en cours', confirme: 'confirmé', termine: 'terminé' }[s] || s;
+}
 function escapeHtml(s) {
   return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
@@ -477,7 +481,7 @@ function renderForm() {
         <div class="field-group">
           <label>Statut</label>
           <select id="f-statut">
-            ${['brouillon','confirme','termine'].map(s => `<option value="${s}" ${p.statut===s?'selected':''}>${s}</option>`).join('')}
+            ${[['brouillon','brouillon'],['en_cours','en cours'],['confirme','confirmé'],['termine','terminé']].map(([s,label]) => `<option value="${s}" ${p.statut===s?'selected':''}>${label}</option>`).join('')}
           </select>
         </div>
       </div>
