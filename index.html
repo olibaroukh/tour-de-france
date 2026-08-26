@@ -146,6 +146,7 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
   <div class="view" id="view-magasins">
     <div style="display:flex; gap:10px; align-items:center; margin-bottom:14px">
       <button class="btn-add" onclick="document.getElementById('ca-file-input').click()">📊 Importer CA (mensuel)</button>
+      <button class="btn-icon" style="border:1px solid var(--border); border-radius:8px" onclick="clearCAData()" title="Supprimer les données CA importées">🗑 Vider le CA</button>
       <span id="ca-import-status" style="font-size:11.5px; color:var(--muted)"></span>
       <input type="file" id="ca-file-input" accept=".xlsx,.xls" style="display:none" onchange="handleCAFileSelected(event)">
     </div>
@@ -195,7 +196,7 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 <div id="toast" class="toast" style="display:none"></div>
 
 <script>
-window.APP_VERSION = '2026.08.26-2';
+window.APP_VERSION = '2026.08.26-3';
 
 // =====================================================================
 // CONFIG
@@ -993,6 +994,22 @@ async function handleCAFileSelected(event) {
     statusEl.textContent = '⚠ Échec de l\'import — vérifier le fichier';
   } finally {
     event.target.value = '';
+  }
+}
+
+async function clearCAData() {
+  if (!confirm('Supprimer toutes les données CA importées ? Cette action est irréversible.')) return;
+  const statusEl = document.getElementById('ca-import-status');
+  statusEl.textContent = 'Suppression…';
+  try {
+    const res = await fetch(`${API_BASE}/api/ca-collaborateurs`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    statusEl.textContent = `✅ ${data.deleted} ligne(s) supprimée(s)`;
+    toast(`CA vidé (${data.deleted} ligne(s))`);
+  } catch (e) {
+    console.error('Suppression CA échouée', e);
+    statusEl.textContent = '⚠ Échec de la suppression';
   }
 }
 
