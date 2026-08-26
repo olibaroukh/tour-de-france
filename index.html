@@ -15,6 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 :root{
@@ -143,6 +144,11 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 
   <!-- ===================== VUE MAGASINS ===================== -->
   <div class="view" id="view-magasins">
+    <div style="display:flex; gap:10px; align-items:center; margin-bottom:14px">
+      <button class="btn-add" onclick="document.getElementById('ca-file-input').click()">📊 Importer CA (mensuel)</button>
+      <span id="ca-import-status" style="font-size:11.5px; color:var(--muted)"></span>
+      <input type="file" id="ca-file-input" accept=".xlsx,.xls" style="display:none" onchange="handleCAFileSelected(event)">
+    </div>
     <div class="search-box">
       <input type="text" id="magasin-search" placeholder="Rechercher un magasin, une ville, un animateur…">
     </div>
@@ -189,7 +195,7 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 <div id="toast" class="toast" style="display:none"></div>
 
 <script>
-window.APP_VERSION = '2026.08.26-1';
+window.APP_VERSION = '2026.08.26-2';
 
 // =====================================================================
 // CONFIG
@@ -924,8 +930,73 @@ function layoutJours(doc, jours, W, H, mar, nCols, startIndex) {
 }
 
 // =====================================================================
-// SERVICE WORKER (PWA)
+// IMPORT CA COLLABORATEUR (Excel mensuel)
 // =====================================================================
+function normalizeHeader(h) {
+  return String(h || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // enlève les accents
+    .toLowerCase().trim();
+}
+
+function parseCARow(row) {
+  const out = { matricule: '', prenom: '', nom: '', magasin_code: '', magasin_nom: '', ca: {}, previsionnel: {}, evolution_pct: null };
+  for (const key of Object.keys(row)) {
+    const h = normalizeHeader(key);
+    const val = row[key];
+    if (h.includes('matricule')) { out.matricule = String(val || '').trim(); continue; }
+    if (h.includes('prenom')) { out.prenom = String(val || '').trim(); continue; }
+    if (h === 'nom' || (h.includes('nom') && !h.includes('prenom') && !h.includes('magasin'))) { out.nom = String(val || '').trim(); continue; }
+    if (h.includes('code') && h.includes('site')) { out.magasin_code = String(val || '').trim(); continue; }
+    if (h.includes('magasin')) { out.magasin_nom = String(val || '').trim(); continue; }
+    if (h.includes('evolution')) {
+      let n = val;
+      if (typeof n === 'string') n = parseFloat(n.replace('%', '').replace(',', '.'));
+      out.evolution_pct = isNaN(n) ? null : n;
+      continue;
+    }
+    const yearMatch = h.match(/(\d{4})/);
+    if (yearMatch) {
+      const year = yearMatch[1];
+      const num = typeof val === 'number' ? val : parseFloat(String(val || '').replace(/\s/g, '').replace(',', '.'));
+      if (!isNaN(num)) {
+        if (h.includes('previsionnel') || h.includes('prevision')) out.previsionnel[year] = num;
+        else out.ca[year] = num;
+      }
+    }
+  }
+  return out;
+}
+
+async function handleCAFileSelected(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const statusEl = document.getElementById('ca-import-status');
+  statusEl.textContent = 'Lecture du fichier…';
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const rawRows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+    const rows = rawRows.map(parseCARow).filter(r => r.matricule);
+    if (!rows.length) { statusEl.textContent = '⚠ Aucune ligne exploitable (matricule manquant ?)'; return; }
+
+    statusEl.textContent = `Import de ${rows.length} ligne(s)…`;
+    const res = await fetch(`${API_BASE}/api/ca-import`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rows })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    statusEl.textContent = `✅ ${data.imported} collaborateur(s) importé(s)`;
+    toast(`CA importé pour ${data.imported} collaborateur(s)`);
+  } catch (e) {
+    console.error('Import CA échoué', e);
+    statusEl.textContent = '⚠ Échec de l\'import — vérifier le fichier';
+  } finally {
+    event.target.value = '';
+  }
+}
+
+
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(e => console.error('SW registration failed', e));
 }
