@@ -300,7 +300,7 @@ function switchView(name) {
   document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.view === name));
   document.getElementById('fab').style.display = (name === 'passages') ? 'flex' : 'none';
   if (name === 'magasins') renderMagasinsList();
-  if (name === 'passages') renderPassagesList();
+  if (name === 'passages') loadPassages();
 }
 
 // =====================================================================
@@ -840,12 +840,12 @@ function generatePDF() {
   const joursParPage = nJours <= 2 ? nJours : 2;
 
   drawHeader(doc, p, W, mar);
-  layoutJours(doc, p.jours.slice(0, joursParPage), W, H, mar, joursParPage);
+  layoutJours(doc, p.jours.slice(0, joursParPage), W, H, mar, joursParPage, 0);
 
   if (nJours > joursParPage) {
     doc.addPage();
     drawHeader(doc, p, W, mar, true);
-    layoutJours(doc, p.jours.slice(joursParPage), W, H, mar, nJours - joursParPage);
+    layoutJours(doc, p.jours.slice(joursParPage), W, H, mar, nJours - joursParPage, joursParPage);
   }
 
   doc.save(`Passage-${(p.titre||'tournee').replace(/[^a-z0-9]+/gi,'-')}.pdf`);
@@ -858,20 +858,20 @@ function drawHeader(doc, p, W, mar, suite) {
   doc.rect(0, 0, 18, 16, 'F');
   doc.setTextColor(255,255,255);
   doc.setFont('helvetica','bold'); doc.setFontSize(13);
-  doc.text(pdfSafe('TOURNÉE RÉSEAU — ISÈRE'.normalize('NFC')), 22, 7);
+  doc.text(pdfSafe('TOURNÉE RÉSEAU'), 22, 7);
   doc.setFont('helvetica','normal'); doc.setFontSize(9);
-  doc.text(pdfSafe(`${p.titre}${suite ? ' (suite)' : ''} — ${fmtDate(p.date_debut)} au ${fmtDate(p.date_fin)}`), 22, 12.5);
+  doc.text(pdfSafe(`${p.titre}${suite ? ' (suite)' : ''} - ${fmtDate(p.date_debut)} au ${fmtDate(p.date_fin)}`), 22, 12.5);
   doc.setTextColor(...OC_BLACK);
 }
 
-function layoutJours(doc, jours, W, H, mar, nCols) {
+function layoutJours(doc, jours, W, H, mar, nCols, startIndex) {
   const colW = (W - 2*mar - (nCols-1)*8) / nCols;
   let x0 = mar, y0 = 24;
   jours.forEach((jour, i) => {
     const x = x0 + i * (colW + 8);
     let y = y0;
     doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(...OC_RED);
-    doc.text(pdfSafe(`JOUR — ${fmtDate(jour.date)}`), x, y);
+    doc.text(pdfSafe(`JOUR ${startIndex + i + 1} - ${fmtDate(jour.date)}`), x, y);
     doc.setDrawColor(...OC_BLACK); doc.setLineWidth(0.5);
     doc.line(x, y+2, x+colW, y+2);
     y += 8;
