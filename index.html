@@ -220,7 +220,7 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 <div id="toast" class="toast" style="display:none"></div>
 
 <script>
-window.APP_VERSION = '2026.08.27-6';
+window.APP_VERSION = '2026.08.27-7';
 
 // =====================================================================
 // CONFIG
@@ -919,9 +919,44 @@ async function resolveMagasinGeo(code) {
   }
 }
 
-// Construit la carte du passage : géocode chaque magasin, appelle le Worker pour
-// générer l'image (Google Maps Static API), renvoie une data URL PNG ou null.
-async function buildPassageMapImage(p) {
+// Résout d'un coup le géocodage de toutes les étapes "magasin" du passage.
+// Retourne une map "jourIndex-etapeIndex" -> géo, réutilisée pour la carte,
+// l'adresse affichée et l'estimation des trajets.
+async function resolveAllStopsGeo(p) {
+  const geoByKey = {};
+  const jours = p.jours || [];
+  for (let ji = 0; ji < jours.length; ji++) {
+    const etapes = jours[ji].etapes || [];
+    for (let ei = 0; ei < etapes.length; ei++) {
+      const e = etapes[ei];
+      if (e.type === 'magasin' && e.magasin_code) {
+        const geo = await resolveMagasinGeo(e.magasin_code);
+        if (geo) geoByKey[`${ji}-${ei}`] = geo;
+      }
+    }
+  }
+  return geoByKey;
+}
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// Estimation grossière (distance à vol d'oiseau + vitesse urbaine moyenne) — clairement
+// étiquetée "estimé". Un calcul d'itinéraire réel demanderait l'API Distance Matrix.
+function estimateTravelTime(km) {
+  const minutes = km / 22 * 60;
+  const low = Math.max(5, Math.round((minutes * 0.8) / 5) * 5);
+  const high = Math.max(low + 5, Math.round((minutes * 1.3) / 5) * 5);
+  return `~${low}-${high} min voiture (estimé) \u00b7 env. ${km.toFixed(1)} km`;
+}
+
+// Construit la carte du passage (image Google Maps Static, pins + trajets colorés par jour).
+async function buildPassageMapImage(p, geoByKey) {
   const jours = p.jours || [];
   const dayColors = ['CC1719', '1A1A1A', '888888']; // rouge OC / noir / gris (jour 1 / 2 / 3)
   const points = [];
@@ -931,10 +966,10 @@ async function buildPassageMapImage(p) {
   for (let ji = 0; ji < jours.length; ji++) {
     const color = dayColors[ji % dayColors.length];
     const routePoints = [];
-    for (const e of (jours[ji].etapes || [])) {
-      if (e.type !== 'magasin' || !e.magasin_code) continue;
-      const geo = await resolveMagasinGeo(e.magasin_code);
-      if (!geo || geo.lat === null || geo.lat === undefined) continue;
+    const etapes = jours[ji].etapes || [];
+    for (let ei = 0; ei < etapes.length; ei++) {
+      const geo = geoByKey[`${ji}-${ei}`];
+      if (!geo) continue;
       points.push({ lat: geo.lat, lon: geo.lon, label: String(seq > 9 ? (seq % 10) : seq), color });
       routePoints.push({ lat: geo.lat, lon: geo.lon });
       seq++;
@@ -963,16 +998,23 @@ async function generatePDF() {
   if (!p.jours || !p.jours.length) { toast('Ajoutez au moins un jour avant de générer le PDF'); return; }
 
   toast('Génération de la carte…', 6000);
-  const mapImage = await buildPassageMapImage(p);
+  const geoByKey = await resolveAllStopsGeo(p);
+  const mapImage = await buildPassageMapImage(p, geoByKey);
   if (!mapImage) toast('⚠ Carte indisponible — PDF généré sans carte', 4000);
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const W = 297, H = 210, mar = 10;
-
   const nJours = p.jours.length;
-  const joursParPage = nJours <= 2 ? nJours : 2;
   const isParisRP = !transportLabel(p);
+
+  if (isParisRP && nJours === 1) {
+    drawSingleDayParisRP(doc, p, W, H, mar, geoByKey, mapImage);
+    doc.save(`Passage-${(p.titre||'tournee').replace(/[^a-z0-9]+/gi,'-')}.pdf`);
+    return;
+  }
+
+  const joursParPage = nJours <= 2 ? nJours : 2;
 
   const topY = drawHeader(doc, p, W, mar, false, isParisRP);
   const bottomCap = mapImage ? 140 : 148;
@@ -993,6 +1035,189 @@ async function generatePDF() {
   }
 
   doc.save(`Passage-${(p.titre||'tournee').replace(/[^a-z0-9]+/gi,'-')}.pdf`);
+}
+
+// ---------------------------------------------------------------------------
+// Mise en page dédiée : passage 1 jour, sans transport (Paris/RP).
+// Colonne gauche = programme détaillé ; colonne droite = carte + récap magasins.
+// ---------------------------------------------------------------------------
+function drawSingleDayParisRP(doc, p, W, H, mar, geoByKey, mapImage) {
+  const jour = p.jours[0];
+  const etapes = jour.etapes || [];
+
+  // --- en-tête ---
+  doc.setFont('helvetica','bold'); doc.setFontSize(8.5);
+  const tabText = 'TOURNEE RESEAU';
+  const tabW = doc.getTextWidth(tabText) + 6;
+  doc.setFillColor(...OC_RED);
+  doc.rect(mar, 8, tabW, 5.2, 'F');
+  doc.setTextColor(255,255,255);
+  doc.text(pdfSafe(tabText), mar + 3, 11.6);
+  doc.setTextColor(...OC_BLACK);
+
+  const titre = `PASSAGE TERRAIN - ${p.titre}`.toUpperCase();
+  doc.setFont('helvetica','bold'); doc.setFontSize(19);
+  doc.text(pdfSafe(titre), mar, 22);
+  const titreW = doc.getTextWidth(pdfSafe(titre));
+  doc.setFillColor(...OC_RED);
+  doc.rect(mar + titreW + 1.5, 19.3, 2.1, 2.1, 'F');
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(...OC_RED);
+  doc.text(pdfSafe('VISITE DES POINTS DE VENTES, ENVIRONNEMENT EXTERIEUR, ENTRETIENS INDIVIDUELS.'), mar, 28.5);
+  doc.setTextColor(...OC_BLACK);
+
+  const participants = (p.participants || []).map(x => x.nom).join(' \u00b7 ');
+  doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(...OC_GREY);
+  doc.text(pdfSafe(`${fmtDate(p.date_debut)} au ${fmtDate(p.date_fin)}  -  ${participants}`), mar, 33.5);
+  doc.setTextColor(...OC_BLACK);
+
+  try {
+    const logoW = 14, logoH = logoW * (756/586);
+    doc.addImage(OC_LOGO_B64, 'PNG', W - mar - logoW, 7, logoW, logoH);
+  } catch (e) { console.error('Logo PDF non chargé', e); }
+
+  // --- bandeau stats ---
+  const stats = [
+    [String(etapes.filter(e=>e.type==='magasin'||e.type==='franchise').length), 'MAGASINS'],
+    ['1', 'JOUR'],
+    ['2h', 'PAR MAGASIN ENV.'],
+    ['<->', 'PARIS / RP'],
+  ];
+  const statsY = 39;
+  const boxW = (W - 2*mar) / 4;
+  stats.forEach((s, i) => {
+    const x = mar + i*boxW;
+    doc.setDrawColor(...OC_RED); doc.setLineWidth(0.8);
+    doc.line(x, statsY, x + boxW - 2, statsY);
+    doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(...OC_RED);
+    doc.text(pdfSafe(s[0]), x, statsY + 6);
+    doc.setFont('helvetica','bold'); doc.setFontSize(6.5); doc.setTextColor(...OC_GREY);
+    doc.text(pdfSafe(s[1]), x, statsY + 9.5);
+  });
+  doc.setTextColor(...OC_BLACK);
+
+  // --- ligne "JOUR 1" + liste grise des magasins concernés ---
+  const jourY = statsY + 20;
+  doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(...OC_RED);
+  doc.text(pdfSafe('JOUR 1'), mar, jourY);
+  doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(...OC_GREY);
+  doc.text(pdfSafe(fmtDate(jour.date)), mar + 17, jourY);
+  const nomsListe = etapes.filter(e => e.type==='magasin'||e.type==='franchise').map(e => e.nom).join(' \u00b7 ');
+  if (nomsListe) {
+    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...OC_GREY);
+    doc.text(pdfSafe(nomsListe), mar + 40, jourY);
+  }
+  doc.setDrawColor(...OC_BLACK); doc.setLineWidth(0.5);
+  doc.line(mar, jourY + 2, W - mar, jourY + 2);
+  doc.setTextColor(...OC_BLACK);
+
+  // --- 2 colonnes : programme (gauche) / carte + récap (droite) ---
+  const colGap = 12;
+  const leftW = (W - 2*mar - colGap) * 0.56;
+  const rightW = (W - 2*mar - colGap) * 0.44;
+  const leftX = mar, rightX = leftX + leftW + colGap;
+
+  let y = jourY + 9;
+  etapes.forEach((e, ei) => {
+    const geo = geoByKey[`0-${ei}`];
+    const adresse = e.adresse || (geo ? geo.adresse : '');
+
+    doc.setFont('helvetica','bold'); doc.setFontSize(9.5);
+    const time = [e.heure_debut, e.heure_fin].filter(Boolean).join(' - ');
+    doc.setTextColor(...OC_RED);
+    doc.text(pdfSafe(time), leftX, y);
+    doc.setTextColor(...OC_BLACK);
+    doc.text(pdfSafe((e.nom||'').toUpperCase()), leftX + 28, y);
+    y += 4.6;
+
+    if (adresse) {
+      doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(90,90,90);
+      doc.splitTextToSize(pdfSafe(adresse), leftW - 28).forEach(l => { doc.text(l, leftX + 28, y); y += 4; });
+      doc.setTextColor(...OC_BLACK);
+    }
+    if (e.notes) {
+      doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(90,90,90);
+      doc.text(pdfSafe(e.notes), leftX + 28, y);
+      doc.setTextColor(...OC_BLACK);
+      y += 4;
+    }
+
+    // trajet vers l'étape suivante : saisie manuelle si présente, sinon estimation auto
+    let travelText = e.trajet_suivant || '';
+    if (!travelText && geo && etapes[ei+1]) {
+      const nextGeo = geoByKey[`0-${ei+1}`];
+      if (nextGeo) travelText = estimateTravelTime(haversineKm(geo.lat, geo.lon, nextGeo.lat, nextGeo.lon));
+    }
+    if (travelText) {
+      doc.setFont('helvetica','italic'); doc.setFontSize(7.5); doc.setTextColor(140,140,140);
+      doc.text(pdfSafe('-> ' + travelText), leftX + 28, y);
+      doc.setTextColor(...OC_BLACK);
+      y += 5.5;
+    } else {
+      y += 2.5;
+    }
+  });
+
+  y += 2;
+  const noteH1 = drawNoteBox(doc, leftX, y, leftW,
+    'Déroulé par étape (~2h)',
+    'contrôle point de vente (~20 min), visite de l\'environnement extérieur (~10 min), entretiens individuels avec chaque collaborateur (~15 min/personne).',
+    7.3);
+  y += noteH1 + 4;
+  drawNoteBox(doc, leftX, y, leftW,
+    'À noter',
+    'trajets estimés en voiture hors trafic ; à ajuster selon la circulation le jour J. Passage 100% Paris/RP - pas de transport longue distance ni d\'hébergement à prévoir.',
+    7.3);
+
+  // --- colonne droite : carte + récap magasins ---
+  let ry = jourY + 9;
+  doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...OC_RED);
+  doc.text(pdfSafe('TRAJET DU JOUR'), rightX, ry);
+  doc.setDrawColor(...OC_BLACK); doc.setLineWidth(0.4);
+  doc.line(rightX, ry + 1.5, rightX + rightW, ry + 1.5);
+  ry += 5;
+
+  if (mapImage) {
+    try {
+      const mapH = rightW * (500/800);
+      doc.addImage(mapImage, 'PNG', rightX, ry, rightW, mapH);
+      doc.setDrawColor(220,220,220); doc.setLineWidth(0.3);
+      doc.rect(rightX, ry, rightW, mapH);
+      ry += mapH + 3;
+    } catch (e) { console.error('Insertion carte PDF échouée', e); }
+    doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(...OC_GREY);
+    doc.text(pdfSafe('Vrai fond de carte - extrait Google Maps, trajet superpose (positions approximatives).'), rightX, ry);
+    doc.setTextColor(...OC_BLACK);
+    ry += 7;
+  }
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(...OC_RED);
+  doc.text(pdfSafe('LES MAGASINS'), rightX, ry);
+  doc.setDrawColor(...OC_BLACK); doc.setLineWidth(0.4);
+  doc.line(rightX, ry + 1.5, rightX + rightW, ry + 1.5);
+  ry += 5.5;
+  doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.setTextColor(...OC_GREY);
+  doc.text(pdfSafe('#'), rightX, ry);
+  doc.text(pdfSafe('MAGASIN'), rightX + 5, ry);
+  doc.text(pdfSafe('CRENEAU'), rightX + rightW - 22, ry);
+  doc.setDrawColor(220,220,220); doc.setLineWidth(0.25);
+  doc.line(rightX, ry + 1.3, rightX + rightW, ry + 1.3);
+  ry += 5;
+  doc.setFontSize(8);
+  let n = 1;
+  etapes.filter(e => e.type==='magasin'||e.type==='franchise').forEach(e => {
+    doc.setFont('helvetica','bold'); doc.setTextColor(...OC_RED);
+    doc.text(String(n), rightX, ry);
+    doc.setFont('helvetica','normal'); doc.setTextColor(...OC_BLACK);
+    doc.text(pdfSafe(e.nom || ''), rightX + 5, ry);
+    doc.setTextColor(...OC_GREY);
+    doc.text(pdfSafe(e.heure_debut || ''), rightX + rightW - 22, ry);
+    doc.setTextColor(...OC_BLACK);
+    ry += 5.5;
+    n++;
+  });
+
+  drawFooter(doc, W, H, mar, 1, 1);
 }
 
 function drawHeader(doc, p, W, mar, suite, isParisRP) {
