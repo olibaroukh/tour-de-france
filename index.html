@@ -220,7 +220,7 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 <div id="toast" class="toast" style="display:none"></div>
 
 <script>
-window.APP_VERSION = '2026.08.27-5';
+window.APP_VERSION = '2026.08.27-6';
 
 // =====================================================================
 // CONFIG
@@ -552,7 +552,7 @@ function renderForm() {
     </details>
 
     <button class="btn-primary" onclick="savePassage()" style="margin-bottom:10px">💾 Enregistrer</button>
-    ${isEdit ? `<button class="btn-secondary" onclick="generatePDF()">📄 Générer le PDF</button>` : ''}
+    ${isEdit ? `<button class="btn-secondary" onclick="generatePDF()">📄 Générer le PDF (avec carte)</button>` : ''}
   `;
   document.getElementById('form-container').innerHTML = html;
 
@@ -890,9 +890,81 @@ function transportLabel(p) {
   return modes[p.transport_mode] || null;
 }
 
-function generatePDF() {
+const geoCache = {}; // code -> {lat, lon, adresse, ...} résolu pendant cette session
+
+async function resolveMagasinGeo(code) {
+  if (geoCache[code]) return geoCache[code];
+  try {
+    const res = await fetch(`${API_BASE}/api/magasin-geo/${code}`);
+    if (res.ok) {
+      const row = await res.json();
+      if (row && row.lat !== null && row.lat !== undefined) { geoCache[code] = row; return row; }
+    }
+  } catch (e) { /* pas encore en cache, on tente le géocodage */ }
+
+  const m = state.magasinsByCode[code];
+  if (!m || !m.google_place_id) return null;
+  try {
+    const res = await fetch(`${API_BASE}/api/geocode`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, place_id: m.google_place_id })
+    });
+    if (!res.ok) return null;
+    const row = await res.json();
+    geoCache[code] = row;
+    return row;
+  } catch (e) {
+    console.error('Géocodage échoué pour', code, e);
+    return null;
+  }
+}
+
+// Construit la carte du passage : géocode chaque magasin, appelle le Worker pour
+// générer l'image (Google Maps Static API), renvoie une data URL PNG ou null.
+async function buildPassageMapImage(p) {
+  const jours = p.jours || [];
+  const dayColors = ['CC1719', '1A1A1A', '888888']; // rouge OC / noir / gris (jour 1 / 2 / 3)
+  const points = [];
+  const routes = [];
+  let seq = 1;
+
+  for (let ji = 0; ji < jours.length; ji++) {
+    const color = dayColors[ji % dayColors.length];
+    const routePoints = [];
+    for (const e of (jours[ji].etapes || [])) {
+      if (e.type !== 'magasin' || !e.magasin_code) continue;
+      const geo = await resolveMagasinGeo(e.magasin_code);
+      if (!geo || geo.lat === null || geo.lat === undefined) continue;
+      points.push({ lat: geo.lat, lon: geo.lon, label: String(seq > 9 ? (seq % 10) : seq), color });
+      routePoints.push({ lat: geo.lat, lon: geo.lon });
+      seq++;
+    }
+    if (routePoints.length > 1) routes.push({ color, points: routePoints });
+  }
+
+  if (points.length < 1) return null;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/static-map`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ points, routes })
+    });
+    if (!res.ok) { console.error('static-map HTTP', res.status); return null; }
+    const data = await res.json();
+    return data.image || null;
+  } catch (e) {
+    console.error('Génération carte échouée', e);
+    return null;
+  }
+}
+
+async function generatePDF() {
   const p = state.currentPassage;
   if (!p.jours || !p.jours.length) { toast('Ajoutez au moins un jour avant de générer le PDF'); return; }
+
+  toast('Génération de la carte…', 6000);
+  const mapImage = await buildPassageMapImage(p);
+  if (!mapImage) toast('⚠ Carte indisponible — PDF généré sans carte', 4000);
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
@@ -903,19 +975,20 @@ function generatePDF() {
   const isParisRP = !transportLabel(p);
 
   const topY = drawHeader(doc, p, W, mar, false, isParisRP);
+  const bottomCap = mapImage ? 140 : 148;
   const usedY1 = layoutJours(doc, p.jours.slice(0, joursParPage), W, mar, joursParPage, 0, 190, topY);
-  const bottomY1 = Math.min(148, Math.max(usedY1 + 12, 70));
+  const bottomY1 = Math.min(bottomCap, Math.max(usedY1 + 12, 70));
 
   const isLastPage = nJours <= joursParPage;
-  if (isLastPage) drawBottomBand(doc, p, W, mar, bottomY1);
+  if (isLastPage) drawBottomBand(doc, p, W, mar, bottomY1, mapImage);
   drawFooter(doc, W, H, mar, 1, isLastPage ? 1 : 2);
 
   if (nJours > joursParPage) {
     doc.addPage();
     const topY2 = drawHeader(doc, p, W, mar, true, isParisRP);
     const usedY2 = layoutJours(doc, p.jours.slice(joursParPage), W, mar, nJours - joursParPage, joursParPage, 190, topY2);
-    const bottomY2 = Math.min(148, Math.max(usedY2 + 12, 70));
-    drawBottomBand(doc, p, W, mar, bottomY2);
+    const bottomY2 = Math.min(bottomCap, Math.max(usedY2 + 12, 70));
+    drawBottomBand(doc, p, W, mar, bottomY2, mapImage);
     drawFooter(doc, W, H, mar, 2, 2);
   }
 
@@ -1086,15 +1159,36 @@ function layoutJours(doc, jours, W, mar, nCols, startIndex, maxY, topY) {
   return deepestY;
 }
 
-function drawBottomBand(doc, p, W, mar, y0) {
+function drawBottomBand(doc, p, W, mar, y0, mapImage) {
   doc.setDrawColor(200,200,200); doc.setLineWidth(0.3);
   doc.line(mar, y0 - 4, W - mar, y0 - 4);
 
-  const colGap = 10;
-  const col1W = (W - 2*mar - 2*colGap) * 0.34; // récap magasins
-  const col2W = (W - 2*mar - 2*colGap) * 0.33; // transport
-  const col3W = (W - 2*mar - 2*colGap) * 0.33; // hébergement
-  const x1 = mar, x2 = x1 + col1W + colGap, x3 = x2 + col2W + colGap;
+  const colGap = 8;
+  let x1, x2, x3, col1W, col2W, col3W;
+
+  if (mapImage) {
+    const mapW = (W - 2*mar - 3*colGap) * 0.30;
+    col1W = (W - 2*mar - 3*colGap) * 0.235;
+    col2W = (W - 2*mar - 3*colGap) * 0.235;
+    col3W = (W - 2*mar - 3*colGap) * 0.23;
+    const xMap = mar;
+    x1 = xMap + mapW + colGap; x2 = x1 + col1W + colGap; x3 = x2 + col2W + colGap;
+
+    doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...OC_RED);
+    doc.text(pdfSafe('TRAJET'), xMap, y0);
+    doc.setDrawColor(...OC_BLACK); doc.setLineWidth(0.4); doc.line(xMap, y0+1.5, xMap+mapW, y0+1.5);
+    try {
+      const mapH = mapW * (500/800);
+      doc.addImage(mapImage, 'PNG', xMap, y0 + 4, mapW, mapH);
+      doc.setDrawColor(220,220,220); doc.setLineWidth(0.3);
+      doc.rect(xMap, y0 + 4, mapW, mapH);
+    } catch (e) { console.error('Insertion carte PDF échouée', e); }
+  } else {
+    col1W = (W - 2*mar - 2*colGap) * 0.34; // récap magasins
+    col2W = (W - 2*mar - 2*colGap) * 0.33; // transport
+    col3W = (W - 2*mar - 2*colGap) * 0.33; // hébergement
+    x1 = mar; x2 = x1 + col1W + colGap; x3 = x2 + col2W + colGap;
+  }
 
   // ---- Récap magasins ----
   doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...OC_RED);
