@@ -158,6 +158,13 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
       <div class="summary-card"><div class="n" id="sum-total">119</div><div class="l">Succursales</div></div>
       <div class="summary-card"><div class="n" id="sum-pct">–</div><div class="l">Couverture</div></div>
     </div>
+    <div class="chip-row" id="statut-filter" style="margin-bottom:14px">
+      <div class="chip selected" data-statut="tous" onclick="setStatutFilter('tous')">Tous</div>
+      <div class="chip" data-statut="brouillon" onclick="setStatutFilter('brouillon')">Brouillon</div>
+      <div class="chip" data-statut="en_cours" onclick="setStatutFilter('en_cours')">En cours</div>
+      <div class="chip" data-statut="confirme" onclick="setStatutFilter('confirme')">Confirmé</div>
+      <div class="chip" data-statut="termine" onclick="setStatutFilter('termine')">Terminé</div>
+    </div>
     <div id="passages-list"></div>
   </div>
 
@@ -220,7 +227,7 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 <div id="toast" class="toast" style="display:none"></div>
 
 <script>
-window.APP_VERSION = '2026.08.28-1';
+window.APP_VERSION = '2026.08.28-2';
 
 // =====================================================================
 // CONFIG
@@ -389,15 +396,28 @@ function renderSummary() {
   document.getElementById('sum-pct').textContent = '–';
 }
 
+function setStatutFilter(statut) {
+  state.statutFilter = statut;
+  document.querySelectorAll('#statut-filter .chip').forEach(c => c.classList.toggle('selected', c.dataset.statut === statut));
+  renderPassagesList();
+}
+
 function renderPassagesList() {
   const el = document.getElementById('passages-list');
+  const filtre = state.statutFilter || 'tous';
+  const passages = filtre === 'tous' ? state.passages : state.passages.filter(p => p.statut === filtre);
+
   if (!state.passages.length) {
     el.innerHTML = `<div class="empty-state"><div class="ic">🗺️</div>
       <div>Aucun passage pour l'instant.</div>
       <div style="font-size:12px;margin-top:4px">Touchez + pour créer votre premier passage.</div></div>`;
     return;
   }
-  el.innerHTML = state.passages.map(p => `
+  if (!passages.length) {
+    el.innerHTML = `<div class="empty-state"><div class="ic">🔍</div><div>Aucun passage avec ce statut.</div></div>`;
+    return;
+  }
+  el.innerHTML = passages.map(p => `
     <div class="passage-card" onclick="openPassageDetail('${p.id}')">
       <div class="pc-top">
         <div>
@@ -652,19 +672,50 @@ function renderTransportDetails() {
   const t = p.transport || {};
   if (p.transport_mode === 'train') {
     el.innerHTML = `
-      <div class="field-group"><label>N° train aller / Gare et heure départ → arrivée</label>
-        <input type="text" id="tr-aller" value="${escapeHtml(t.aller||'')}" placeholder="Ex. TGV 6911 · Paris 10h14 → Grenoble 13h13"></div>
-      <div class="field-group"><label>N° train retour / Gare et heure départ → arrivée</label>
-        <input type="text" id="tr-retour" value="${escapeHtml(t.retour||'')}" placeholder="Ex. TGV 6922 · Grenoble 16h45 → Paris 19h46"></div>
-      <div class="field-group"><label>Référence réservation</label><input type="text" id="tr-ref" value="${escapeHtml(t.ref||'')}"></div>
-      <div class="field-group"><label>Sièges par participant</label><textarea id="tr-sieges" rows="2" placeholder="Ex. Sacha : 268 · Olivier : 272">${escapeHtml(t.sieges||'')}</textarea></div>
+      <div class="field-group"><label>Référence réservation</label><input type="text" id="tr-ref" value="${escapeHtml(t.ref||'')}" placeholder="Ex. SNJ2NJ"></div>
+
+      <div style="font-size:11px;font-weight:700;color:var(--red);text-transform:uppercase;margin:10px 0 4px">Aller</div>
+      <div class="field-group"><label>N° train</label><input type="text" id="tr-train_aller" value="${escapeHtml(t.train_aller||'')}" placeholder="Ex. TGV 6911"></div>
+      <div class="field-row">
+        <div class="field-group"><label>Gare et heure de départ</label><input type="text" id="tr-depart_aller" value="${escapeHtml(t.depart_aller||'')}" placeholder="Ex. Paris Gare de Lyon · 10h14"></div>
+        <div class="field-group"><label>Gare et heure d'arrivée</label><input type="text" id="tr-arrivee_aller" value="${escapeHtml(t.arrivee_aller||'')}" placeholder="Ex. Grenoble · 13h13"></div>
+      </div>
+      <div class="field-row">
+        <div class="field-group"><label>N° voiture</label><input type="text" id="tr-voiture_aller" value="${escapeHtml(t.voiture_aller||'')}" placeholder="Ex. 2"></div>
+        <div class="field-group" style="flex:2"><label>Sièges par participant</label><input type="text" id="tr-sieges_aller" value="${escapeHtml(t.sieges_aller||'')}" placeholder="Ex. Sacha : 268 · Olivier : 272"></div>
+      </div>
+
+      <div style="font-size:11px;font-weight:700;color:var(--red);text-transform:uppercase;margin:12px 0 4px">Retour</div>
+      <div class="field-group"><label>N° train</label><input type="text" id="tr-train_retour" value="${escapeHtml(t.train_retour||'')}" placeholder="Ex. TGV 6922"></div>
+      <div class="field-row">
+        <div class="field-group"><label>Gare et heure de départ</label><input type="text" id="tr-depart_retour" value="${escapeHtml(t.depart_retour||'')}" placeholder="Ex. Grenoble · 16h45"></div>
+        <div class="field-group"><label>Gare et heure d'arrivée</label><input type="text" id="tr-arrivee_retour" value="${escapeHtml(t.arrivee_retour||'')}" placeholder="Ex. Paris Gare de Lyon · 19h46"></div>
+      </div>
+      <div class="field-row">
+        <div class="field-group"><label>N° voiture</label><input type="text" id="tr-voiture_retour" value="${escapeHtml(t.voiture_retour||'')}" placeholder="Ex. 2"></div>
+        <div class="field-group" style="flex:2"><label>Sièges par participant</label><input type="text" id="tr-sieges_retour" value="${escapeHtml(t.sieges_retour||'')}" placeholder="Ex. Sacha : 225 · Olivier : 229"></div>
+      </div>
     `;
   } else if (p.transport_mode === 'voiture') {
     el.innerHTML = `<div class="field-group"><label>Notes (véhicule, conducteur…)</label><textarea id="tr-notes" rows="2">${escapeHtml(t.notes||'')}</textarea></div>`;
   } else if (p.transport_mode === 'avion') {
     el.innerHTML = `
-      <div class="field-group"><label>Vol aller</label><input type="text" id="tr-aller" value="${escapeHtml(t.aller||'')}"></div>
-      <div class="field-group"><label>Vol retour</label><input type="text" id="tr-retour" value="${escapeHtml(t.retour||'')}"></div>
+      <div class="field-group"><label>Compagnie</label><input type="text" id="tr-compagnie" value="${escapeHtml(t.compagnie||'')}" placeholder="Ex. Air France"></div>
+      <div class="field-group"><label>Référence réservation</label><input type="text" id="tr-ref" value="${escapeHtml(t.ref||'')}"></div>
+
+      <div style="font-size:11px;font-weight:700;color:var(--red);text-transform:uppercase;margin:10px 0 4px">Aller</div>
+      <div class="field-group"><label>N° vol</label><input type="text" id="tr-vol_aller" value="${escapeHtml(t.vol_aller||'')}" placeholder="Ex. AF1234"></div>
+      <div class="field-row">
+        <div class="field-group"><label>Aéroport et heure de départ</label><input type="text" id="tr-depart_aller" value="${escapeHtml(t.depart_aller||'')}" placeholder="Ex. Paris CDG · 08h30"></div>
+        <div class="field-group"><label>Aéroport et heure d'arrivée</label><input type="text" id="tr-arrivee_aller" value="${escapeHtml(t.arrivee_aller||'')}" placeholder="Ex. Nice · 10h00"></div>
+      </div>
+
+      <div style="font-size:11px;font-weight:700;color:var(--red);text-transform:uppercase;margin:12px 0 4px">Retour</div>
+      <div class="field-group"><label>N° vol</label><input type="text" id="tr-vol_retour" value="${escapeHtml(t.vol_retour||'')}" placeholder="Ex. AF5678"></div>
+      <div class="field-row">
+        <div class="field-group"><label>Aéroport et heure de départ</label><input type="text" id="tr-depart_retour" value="${escapeHtml(t.depart_retour||'')}"></div>
+        <div class="field-group"><label>Aéroport et heure d'arrivée</label><input type="text" id="tr-arrivee_retour" value="${escapeHtml(t.arrivee_retour||'')}"></div>
+      </div>
     `;
   }
   el.querySelectorAll('input,textarea').forEach(inp => {
@@ -1106,7 +1157,7 @@ function drawSingleDayParisRP(doc, p, W, H, mar, geoByKey, mapImage, effByKey) {
   doc.text(pdfSafe(titre), mar, 22);
   const titreW = doc.getTextWidth(pdfSafe(titre));
   doc.setFillColor(...OC_RED);
-  doc.circle(mar + titreW + 3, 19.4, 1.15, 'F');
+  doc.circle(mar + titreW + 4, 20.5, 1.15, 'F');
 
   doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(...OC_RED);
   doc.text(pdfSafe('VISITE DES POINTS DE VENTES, ENVIRONNEMENT EXTERIEUR, ENTRETIENS INDIVIDUELS.'), mar, 28.5);
@@ -1314,7 +1365,7 @@ function drawHeader(doc, p, W, mar, suite, isParisRP) {
   doc.text(pdfSafe(titre), mar, 22);
   const titreW = doc.getTextWidth(pdfSafe(titre));
   doc.setFillColor(...OC_RED);
-  doc.circle(mar + titreW + 3.1, 19.4, 1.25, 'F');
+  doc.circle(mar + titreW + 4.1, 20.5, 1.25, 'F');
 
   // sous-titre rouge
   const nJours = (p.jours||[]).length;
@@ -1525,20 +1576,39 @@ function drawBottomBand(doc, p, W, mar, y0, mapImage) {
   doc.text(pdfSafe('TRANSPORT'), x2, y0);
   doc.setDrawColor(...OC_BLACK); doc.setLineWidth(0.4); doc.line(x2, y0+1.5, x2+col2W, y0+1.5);
   const mode = transportLabel(p);
-  const tCardH = mode ? 32 : 10;
+  const t = p.transport || {};
+  const transportLines = (() => {
+    if (p.transport_mode === 'train') {
+      return [
+        ['Reference', t.ref],
+        ['Aller - train', t.train_aller], ['Aller - depart', t.depart_aller], ['Aller - arrivee', t.arrivee_aller],
+        ['Aller - voiture/sieges', [t.voiture_aller, t.sieges_aller].filter(Boolean).join(' - ')],
+        ['Retour - train', t.train_retour], ['Retour - depart', t.depart_retour], ['Retour - arrivee', t.arrivee_retour],
+        ['Retour - voiture/sieges', [t.voiture_retour, t.sieges_retour].filter(Boolean).join(' - ')],
+      ];
+    }
+    if (p.transport_mode === 'avion') {
+      return [
+        ['Compagnie', t.compagnie], ['Reference', t.ref],
+        ['Aller - vol', t.vol_aller], ['Aller - depart', t.depart_aller], ['Aller - arrivee', t.arrivee_aller],
+        ['Retour - vol', t.vol_retour], ['Retour - depart', t.depart_retour], ['Retour - arrivee', t.arrivee_retour],
+      ];
+    }
+    if (p.transport_mode === 'voiture') return [['Notes', t.notes]];
+    return [];
+  })().filter(([,v]) => v);
+  const tCardH = mode ? Math.max(20, 9 + transportLines.length * 7.6) : 10;
   doc.setFillColor(250,250,250); doc.rect(x2, y0+4, col2W, tCardH, 'F');
   doc.setFillColor(...OC_RED); doc.rect(x2, y0+4, 1, tCardH, 'F');
   doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...OC_BLACK);
   let ty = y0 + 9;
   if (mode) {
-    doc.setFont('helvetica','bold'); doc.text(pdfSafe(mode), x2 + 4, ty); ty += 4.5;
-    doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(...OC_GREY);
-    const t = p.transport || {};
-    [['Aller', t.aller], ['Retour', t.retour], ['Reference', t.ref], ['Sieges', t.sieges], ['Notes', t.notes]]
-      .filter(([,v]) => v)
-      .forEach(([label, v]) => {
+    doc.setFont('helvetica','bold'); doc.text(pdfSafe(mode), x2 + 4, ty); ty += 5;
+    doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(...OC_GREY);
+    transportLines.forEach(([label, v]) => {
         const lines = doc.splitTextToSize(pdfSafe(`${label} : ${v}`), col2W - 8);
-        lines.forEach(l => { if (ty <= y0 + 4 + tCardH - 2) { doc.text(l, x2 + 4, ty); ty += 3.8; } });
+        lines.forEach(l => { if (ty <= y0 + 4 + tCardH - 2) { doc.text(l, x2 + 4, ty); ty += 3.6; } });
+        ty += 1;
       });
   } else {
     doc.setTextColor(...OC_GREY);
