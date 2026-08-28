@@ -227,7 +227,7 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 <div id="toast" class="toast" style="display:none"></div>
 
 <script>
-window.APP_VERSION = '2026.08.28-3';
+window.APP_VERSION = '2026.08.28-5';
 
 // =====================================================================
 // CONFIG
@@ -586,6 +586,10 @@ function renderForm() {
         <div class="field-group"><label>Nom de l'hôtel</label><input type="text" id="f-hotel-nom" value="${escapeHtml(p.hotel_nom)}"></div>
         <div class="field-group"><label>Adresse</label><input type="text" id="f-hotel-adresse" value="${escapeHtml(p.hotel_adresse)}"></div>
         <div class="field-group"><label>Téléphone</label><input type="text" id="f-hotel-tel" value="${escapeHtml(p.hotel_tel)}"></div>
+        <div class="field-row">
+          <div class="field-group"><label>Heure d'arrivée (jour 1, dépose bagages)</label><input type="time" id="f-hotel-heure-arrivee" value="${escapeHtml(p.hotel_heure_arrivee||'')}"></div>
+          <div class="field-group"><label>Heure de départ (dernier jour, check-out)</label><input type="time" id="f-hotel-heure-depart" value="${escapeHtml(p.hotel_heure_depart||'')}"></div>
+        </div>
       </div>
     </details>
 
@@ -910,6 +914,8 @@ function collectFormIntoState() {
   p.hotel_nom = document.getElementById('f-hotel-nom').value.trim();
   p.hotel_adresse = document.getElementById('f-hotel-adresse').value.trim();
   p.hotel_tel = document.getElementById('f-hotel-tel').value.trim();
+  p.hotel_heure_arrivee = document.getElementById('f-hotel-heure-arrivee').value;
+  p.hotel_heure_depart = document.getElementById('f-hotel-heure-depart').value;
 }
 
 async function savePassage() {
@@ -1002,6 +1008,7 @@ async function resolveMagasinGeo(code) {
 // l'adresse affichée et l'estimation des trajets.
 async function resolveAllStopsGeo(p) {
   const geoByKey = {};
+  const failures = [];
   const jours = p.jours || [];
   for (let ji = 0; ji < jours.length; ji++) {
     const etapes = jours[ji].etapes || [];
@@ -1010,9 +1017,11 @@ async function resolveAllStopsGeo(p) {
       if (e.type === 'magasin' && e.magasin_code) {
         const geo = await resolveMagasinGeo(e.magasin_code);
         if (geo) geoByKey[`${ji}-${ei}`] = geo;
+        else failures.push(e.nom || e.magasin_code);
       }
     }
   }
+  geoByKey.__failures = failures;
   return geoByKey;
 }
 
@@ -1094,15 +1103,20 @@ function buildDisplayItems(p, ji, nJours) {
       });
     }
     if (p.hotel_nom && nJours > 1) {
-      items.push({ kind: 'hotel', heure_debut: '', heure_fin: '', nom: p.hotel_nom, detail: [p.hotel_adresse, p.hotel_tel].filter(Boolean).join(' \u00b7 ') + ' - dépose bagages' });
+      items.push({ kind: 'hotel', heure_debut: p.hotel_heure_arrivee || '', heure_fin: '', nom: p.hotel_nom, detail: [p.hotel_adresse, p.hotel_tel].filter(Boolean).join(' \u00b7 ') + ' - dépose bagages' });
     }
   }
 
   if (ji === nJours - 1 && nJours > 1 && p.hotel_nom) {
-    items.push({ kind: 'hotel', heure_debut: '', heure_fin: '', nom: 'Départ de l\'hôtel', detail: 'Check-out, bagages en voiture.' });
+    items.push({ kind: 'hotel', heure_debut: p.hotel_heure_depart || '', heure_fin: '', nom: 'Départ de l\'hôtel', detail: 'Check-out, bagages en voiture.' });
   }
 
   (jour.etapes || []).forEach((e, ei) => items.push({ kind: 'etape', ref: e, ei }));
+
+  // Retour à l'hôtel pour la nuit, en fin de journée (sauf le dernier jour, qui se termine par le retour)
+  if (ji < nJours - 1 && nJours > 1 && p.hotel_nom) {
+    items.push({ kind: 'hotel', heure_debut: '', heure_fin: '', nom: 'Retour à l\'hôtel', detail: 'Nuit sur place.' });
+  }
 
   if (ji === nJours - 1) {
     if (mode === 'train' && (t.train_retour || t.depart_retour || t.arrivee_retour)) {
@@ -1169,9 +1183,11 @@ async function generatePDF() {
 
   toast('Génération de la carte…', 6000);
   const geoByKey = await resolveAllStopsGeo(p);
+  const geoFailures = geoByKey.__failures || [];
   const effByKey = await resolveEffectifs(p);
   const mapImage = await buildPassageMapImage(p, geoByKey);
   if (!mapImage) toast('⚠ Carte indisponible — PDF généré sans carte', 4000);
+  if (geoFailures.length) toast(`⚠ Non localisé(s) sur la carte : ${geoFailures.join(', ')}`, 7000);
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
@@ -1509,12 +1525,11 @@ function layoutJours(doc, p, jours, W, mar, nCols, startIndex, nJoursTotal, maxY
   const colW = (W - 2*mar - (nCols-1)*gap) / nCols;
   let x0 = mar, y0 = topY || 40;
   let deepestY = y0;
+  const colYEnds = [];
   jours.forEach((jour, i) => {
     const ji = startIndex + i;
     const x = x0 + i * (colW + gap);
     let y = y0;
-
-    if (i > 0) { doc.setDrawColor(220,220,220); doc.setLineWidth(0.3); doc.line(x - gap/2, y0 - 2, x - gap/2, Math.min(maxY - 4, y0 + 95)); }
 
     doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(...OC_RED);
     doc.text(pdfSafe(`JOUR ${ji + 1}`), x, y);
@@ -1613,15 +1628,17 @@ function layoutJours(doc, p, jours, W, mar, nCols, startIndex, nJoursTotal, maxY
       }
     });
 
-    y += 2;
-    const noteH = drawNoteBox(doc, x, y, colW,
-      'À noter',
-      'trajets estimés en voiture hors trafic ; à ajuster selon la circulation le jour J.',
-      6.8);
-    y += noteH;
-
+    colYEnds[i] = y;
     deepestY = Math.max(deepestY, y);
   });
+
+  // traits verticaux entre colonnes, longueur réelle (pas une estimation fixe)
+  for (let i = 1; i < jours.length; i++) {
+    const x = x0 + i * (colW + gap);
+    doc.setDrawColor(220,220,220); doc.setLineWidth(0.3);
+    doc.line(x - gap/2, y0 - 2, x - gap/2, Math.max(colYEnds[i-1], colYEnds[i]));
+  }
+
   return deepestY;
 }
 
@@ -1713,18 +1730,18 @@ function drawBottomBand(doc, p, W, mar, y0, mapImage) {
   if (p.transport_mode === 'train') {
     transportCard(`${t.train_aller || 'Train aller'} - ${extractPlaceFromText(t.depart_aller)} -> ${extractPlaceFromText(t.arrivee_aller)}`, [
       ['', [t.depart_aller, t.arrivee_aller].filter(Boolean).join(' -> ')],
-      ['', [t.ref?`Réf. ${t.ref}`:'', t.voiture_aller?`voiture ${t.voiture_aller}`:''].filter(Boolean).join(', ')],
+      ['', t.voiture_aller ? `Voiture ${t.voiture_aller}` : ''],
       ['', t.sieges_aller],
     ]);
     transportCard(`${t.train_retour || 'Train retour'} - ${extractPlaceFromText(t.depart_retour)} -> ${extractPlaceFromText(t.arrivee_retour)}`, [
       ['', [t.depart_retour, t.arrivee_retour].filter(Boolean).join(' -> ')],
-      ['', [t.ref?`Réf. ${t.ref}`:'', t.voiture_retour?`voiture ${t.voiture_retour}`:''].filter(Boolean).join(', ')],
+      ['', t.voiture_retour ? `Voiture ${t.voiture_retour}` : ''],
       ['', t.sieges_retour],
     ]);
   } else if (p.transport_mode === 'avion') {
     transportCard(`${t.vol_aller || 'Vol aller'} - ${extractPlaceFromText(t.depart_aller)} -> ${extractPlaceFromText(t.arrivee_aller)}`, [
       ['', [t.depart_aller, t.arrivee_aller].filter(Boolean).join(' -> ')],
-      ['', [t.compagnie, t.ref?`Réf. ${t.ref}`:''].filter(Boolean).join(', ')],
+      ['', t.compagnie],
     ]);
     transportCard(`${t.vol_retour || 'Vol retour'} - ${extractPlaceFromText(t.depart_retour)} -> ${extractPlaceFromText(t.arrivee_retour)}`, [
       ['', [t.depart_retour, t.arrivee_retour].filter(Boolean).join(' -> ')],
