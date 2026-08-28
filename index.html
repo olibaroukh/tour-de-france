@@ -227,7 +227,7 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 <div id="toast" class="toast" style="display:none"></div>
 
 <script>
-window.APP_VERSION = '2026.08.28-2';
+window.APP_VERSION = '2026.08.28-3';
 
 // =====================================================================
 // CONFIG
@@ -766,6 +766,10 @@ function renderEtapes(ji) {
         <input type="time" value="${e.heure_debut||''}" style="width:90px" onchange="updateEtape(${ji},${ei},'heure_debut',this.value)">
         →
         <input type="time" value="${e.heure_fin||''}" style="width:90px" onchange="updateEtape(${ji},${ei},'heure_fin',this.value)">
+        ${e.type === 'magasin' ? `
+        <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);margin-left:8px">
+          <input type="checkbox" ${e.soiree ? 'checked' : ''} onchange="updateEtape(${ji},${ei},'soiree',this.checked)"> Soirée
+        </label>` : ''}
       </div>
       ${e.adresse ? `<div class="er-sub">${escapeHtml(e.adresse)}</div>` : ''}
       <input type="text" placeholder="Trajet vers l'étape suivante (ex. ~20 min voiture · 20 km)" value="${escapeHtml(e.trajet_suivant||'')}"
@@ -1051,6 +1055,76 @@ function estimateTravelTime(km) {
   return `~${low}-${high} min voiture (estimé) \u00b7 env. ${km.toFixed(1)} km`;
 }
 
+// Un champ "Gare et heure" est saisi en texte libre (ex. "Paris Gare de Lyon · 10h14").
+// On en extrait l'heure pour l'affichage en rouge, et le lieu pour le titre de la ligne.
+function extractTimeFromText(str) {
+  if (!str) return '';
+  const m = str.match(/(\d{1,2})[h:](\d{2})/);
+  return m ? `${m[1]}h${m[2]}` : '';
+}
+function extractPlaceFromText(str) {
+  if (!str) return '';
+  return str.replace(/(\d{1,2})[h:](\d{2})/, '').replace(/^[\s·\-,]+|[\s·\-,]+$/g, '').trim();
+}
+
+// Construit, pour un jour donné, la liste des lignes à afficher dans le programme :
+// transport aller + hôtel (arrivée) en tête du 1er jour, hôtel (départ) + transport retour
+// en fin du dernier jour, entrelacés avec les vraies étapes. Purement pour l'affichage PDF —
+// ne modifie rien en base.
+function buildDisplayItems(p, ji, nJours) {
+  const items = [];
+  const t = p.transport || {};
+  const mode = p.transport_mode;
+  const jour = p.jours[ji];
+
+  if (ji === 0) {
+    if (mode === 'train' && (t.train_aller || t.depart_aller || t.arrivee_aller)) {
+      items.push({
+        kind: 'transport',
+        heure_debut: extractTimeFromText(t.depart_aller), heure_fin: extractTimeFromText(t.arrivee_aller),
+        nom: [t.train_aller, [extractPlaceFromText(t.depart_aller), extractPlaceFromText(t.arrivee_aller)].filter(Boolean).join(' -> ')].filter(Boolean).join(' \u00b7 '),
+        detail: [t.ref ? `Réf. ${t.ref}` : '', t.voiture_aller ? `voiture ${t.voiture_aller}` : '', t.sieges_aller].filter(Boolean).join(', '),
+      });
+    } else if (mode === 'avion' && (t.vol_aller || t.depart_aller || t.arrivee_aller)) {
+      items.push({
+        kind: 'transport',
+        heure_debut: extractTimeFromText(t.depart_aller), heure_fin: extractTimeFromText(t.arrivee_aller),
+        nom: [t.vol_aller, [extractPlaceFromText(t.depart_aller), extractPlaceFromText(t.arrivee_aller)].filter(Boolean).join(' -> ')].filter(Boolean).join(' \u00b7 '),
+        detail: [t.compagnie, t.ref ? `Réf. ${t.ref}` : ''].filter(Boolean).join(', '),
+      });
+    }
+    if (p.hotel_nom && nJours > 1) {
+      items.push({ kind: 'hotel', heure_debut: '', heure_fin: '', nom: p.hotel_nom, detail: [p.hotel_adresse, p.hotel_tel].filter(Boolean).join(' \u00b7 ') + ' - dépose bagages' });
+    }
+  }
+
+  if (ji === nJours - 1 && nJours > 1 && p.hotel_nom) {
+    items.push({ kind: 'hotel', heure_debut: '', heure_fin: '', nom: 'Départ de l\'hôtel', detail: 'Check-out, bagages en voiture.' });
+  }
+
+  (jour.etapes || []).forEach((e, ei) => items.push({ kind: 'etape', ref: e, ei }));
+
+  if (ji === nJours - 1) {
+    if (mode === 'train' && (t.train_retour || t.depart_retour || t.arrivee_retour)) {
+      items.push({
+        kind: 'transport',
+        heure_debut: extractTimeFromText(t.depart_retour), heure_fin: extractTimeFromText(t.arrivee_retour),
+        nom: [t.train_retour, [extractPlaceFromText(t.depart_retour), extractPlaceFromText(t.arrivee_retour)].filter(Boolean).join(' -> ')].filter(Boolean).join(' \u00b7 '),
+        detail: [t.ref ? `Réf. ${t.ref}` : '', t.voiture_retour ? `voiture ${t.voiture_retour}` : '', t.sieges_retour].filter(Boolean).join(', '),
+      });
+    } else if (mode === 'avion' && (t.vol_retour || t.depart_retour || t.arrivee_retour)) {
+      items.push({
+        kind: 'transport',
+        heure_debut: extractTimeFromText(t.depart_retour), heure_fin: extractTimeFromText(t.arrivee_retour),
+        nom: [t.vol_retour, [extractPlaceFromText(t.depart_retour), extractPlaceFromText(t.arrivee_retour)].filter(Boolean).join(' -> ')].filter(Boolean).join(' \u00b7 '),
+        detail: [t.compagnie, t.ref ? `Réf. ${t.ref}` : ''].filter(Boolean).join(', '),
+      });
+    }
+  }
+
+  return items;
+}
+
 // Construit la carte du passage (image Google Maps Static, pins + trajets colorés par jour).
 async function buildPassageMapImage(p, geoByKey) {
   const jours = p.jours || [];
@@ -1113,9 +1187,9 @@ async function generatePDF() {
 
   const joursParPage = nJours <= 2 ? nJours : 2;
 
-  const topY = drawHeader(doc, p, W, mar, false, isParisRP);
-  const bottomCap = mapImage ? 140 : 148;
-  const usedY1 = layoutJours(doc, p.jours.slice(0, joursParPage), W, mar, joursParPage, 0, 190, topY);
+  const topY = drawHeader(doc, p, W, mar, false);
+  const bottomCap = mapImage ? 158 : 165;
+  const usedY1 = layoutJours(doc, p, p.jours.slice(0, joursParPage), W, mar, joursParPage, 0, nJours, 190, topY, geoByKey, effByKey);
   const bottomY1 = Math.min(bottomCap, Math.max(usedY1 + 12, 70));
 
   const isLastPage = nJours <= joursParPage;
@@ -1124,8 +1198,8 @@ async function generatePDF() {
 
   if (nJours > joursParPage) {
     doc.addPage();
-    const topY2 = drawHeader(doc, p, W, mar, true, isParisRP);
-    const usedY2 = layoutJours(doc, p.jours.slice(joursParPage), W, mar, nJours - joursParPage, joursParPage, 190, topY2);
+    const topY2 = drawHeader(doc, p, W, mar, true);
+    const usedY2 = layoutJours(doc, p, p.jours.slice(joursParPage), W, mar, nJours - joursParPage, joursParPage, nJours, 190, topY2, geoByKey, effByKey);
     const bottomY2 = Math.min(bottomCap, Math.max(usedY2 + 12, 70));
     drawBottomBand(doc, p, W, mar, bottomY2, mapImage);
     drawFooter(doc, W, H, mar, 2, 2);
@@ -1348,10 +1422,10 @@ function drawSingleDayParisRP(doc, p, W, H, mar, geoByKey, mapImage, effByKey) {
   drawFooter(doc, W, H, mar, 1, 1);
 }
 
-function drawHeader(doc, p, W, mar, suite, isParisRP) {
+function drawHeader(doc, p, W, mar, suite) {
   // petit tag rouge (pas de bandeau plein — celui-ci reste propre à Tour de France)
   doc.setFont('helvetica','bold'); doc.setFontSize(8.5);
-  const tabText = 'TOURNEE RESEAU';
+  const tabText = 'TOURNEE SUCCURSALES FRANCE';
   const tabW = doc.getTextWidth(tabText) + 6;
   doc.setFillColor(...OC_RED);
   doc.rect(mar, 8, tabW, 5.2, 'F');
@@ -1359,8 +1433,8 @@ function drawHeader(doc, p, W, mar, suite, isParisRP) {
   doc.text(pdfSafe(tabText), mar + 3, 11.6);
   doc.setTextColor(...OC_BLACK);
 
-  // titre : gros, noir, majuscules, carré rouge final (pas un point de ponctuation)
-  const titre = `${p.titre}${suite ? ' (suite)' : ''}`.toUpperCase();
+  // titre : gros, noir, majuscules, point rond rouge final
+  const titre = `PASSAGE TERRAIN - ${p.titre}${suite ? ' (suite)' : ''}`.toUpperCase();
   doc.setFont('helvetica','bold'); doc.setFontSize(21);
   doc.text(pdfSafe(titre), mar, 22);
   const titreW = doc.getTextWidth(pdfSafe(titre));
@@ -1369,9 +1443,7 @@ function drawHeader(doc, p, W, mar, suite, isParisRP) {
 
   // sous-titre rouge
   const nJours = (p.jours||[]).length;
-  const subtitle = isParisRP
-    ? 'Controle point de vente, environnement exterieur, entretiens individuels.'
-    : `Ensemble, on couvre le secteur en ${nJours} jour${nJours>1?'s':''}.`;
+  const subtitle = `Ensemble, on couvre le secteur en ${nJours} jour${nJours>1?'s':''}.`;
   doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(...OC_RED);
   doc.text(pdfSafe(subtitle.toUpperCase()), mar, 28.5);
   doc.setTextColor(...OC_BLACK);
@@ -1379,13 +1451,13 @@ function drawHeader(doc, p, W, mar, suite, isParisRP) {
   // meta : dates + participants, gris
   const participants = (p.participants || []).map(x => x.nom).join(' \u00b7 ');
   doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(...OC_GREY);
-  doc.text(pdfSafe(`${fmtDate(p.date_debut)} au ${fmtDate(p.date_fin)}  -  ${participants}`), mar, 33.5);
+  doc.text(pdfSafe(`Du ${fmtDateLongFR(p.date_debut)} au ${fmtDateLongFR(p.date_fin)}  -  ${participants}`), mar, 33.5);
   doc.setTextColor(...OC_BLACK);
 
-  // logo Optical Center (vraie image, pas du texte)
+  // logo Optical Center — même taille que la version 1 jour
   try {
-    const logoW = 20, logoH = logoW * (756/586);
-    doc.addImage(OC_LOGO_B64, 'PNG', W - mar - logoW, 6, logoW, logoH);
+    const logoW = 14, logoH = logoW * (756/586);
+    doc.addImage(OC_LOGO_B64, 'PNG', W - mar - logoW, 7, logoW, logoH);
   } catch (e) { console.error('Logo PDF non chargé', e); }
 
   // bandeau stats
@@ -1408,14 +1480,8 @@ function drawHeader(doc, p, W, mar, suite, isParisRP) {
   });
   doc.setTextColor(...OC_BLACK);
 
-  if (isParisRP && !suite) {
-    const noteH = drawNoteBox(doc, mar, statsY + 13, W - 2*mar,
-      'Déroulé par étape (~2h)',
-      'contrôle point de vente (~20 min), visite de l\'environnement extérieur (~10 min), entretiens individuels avec chaque collaborateur (~15 min/personne).',
-      7.3);
-    return statsY + 13 + noteH + 4;
-  }
-  return statsY + 13;
+  // même espace qu'en version 1 jour avant que le programme ne commence
+  return statsY + 20;
 }
 
 // Encart stylé (fond gris clair + filet rouge à gauche), utilisé pour les notes et rappels.
@@ -1438,36 +1504,65 @@ function drawNoteBox(doc, x, y, w, label, text, fontSize) {
   return h;
 }
 
-function layoutJours(doc, jours, W, mar, nCols, startIndex, maxY, topY) {
+function layoutJours(doc, p, jours, W, mar, nCols, startIndex, nJoursTotal, maxY, topY, geoByKey, effByKey) {
   const gap = 10;
   const colW = (W - 2*mar - (nCols-1)*gap) / nCols;
   let x0 = mar, y0 = topY || 40;
   let deepestY = y0;
   jours.forEach((jour, i) => {
+    const ji = startIndex + i;
     const x = x0 + i * (colW + gap);
     let y = y0;
 
     if (i > 0) { doc.setDrawColor(220,220,220); doc.setLineWidth(0.3); doc.line(x - gap/2, y0 - 2, x - gap/2, Math.min(maxY - 4, y0 + 95)); }
 
     doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(...OC_RED);
-    doc.text(pdfSafe(`JOUR ${startIndex + i + 1}`), x, y);
+    doc.text(pdfSafe(`JOUR ${ji + 1}`), x, y);
     doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...OC_GREY);
-    doc.text(pdfSafe(fmtDate(jour.date)), x + 20, y);
+    doc.text(pdfSafe(fmtDateShortFR(jour.date)), x + 17, y);
+    const nomsListe = (jour.etapes||[]).filter(e=>e.type==='magasin'||e.type==='franchise').map(e=>e.nom).join(' \u00b7 ');
+    if (nomsListe) {
+      doc.setFontSize(7); doc.setTextColor(...OC_GREY);
+      doc.splitTextToSize(pdfSafe(nomsListe), colW - 38).slice(0,1).forEach(l => doc.text(l, x + 34, y));
+    }
     doc.setDrawColor(...OC_BLACK); doc.setLineWidth(0.5);
     doc.line(x, y+2, x+colW, y+2);
     y += 8;
     doc.setTextColor(...OC_BLACK);
 
-    (jour.etapes||[]).forEach(e => {
+    const items = buildDisplayItems(p, ji, nJoursTotal);
+    items.forEach(item => {
       if (y > maxY - 6) return; // sécurité anti-débordement
 
-      // fond légèrement teinté pour une étape en soirée (déduit de l'heure, pas du type —
-      // un magasin visité le soir reste un magasin dans le comptage et le récap).
-      const isEvening = e.heure_debut && e.heure_debut >= '18:00';
-      let rowH = 4.2 + (e.adresse ? 4 : 0) + (e.notes ? 4 : 0) + (e.trajet_suivant ? 4.5 : 1.5);
+      if (item.kind === 'transport' || item.kind === 'hotel') {
+        doc.setFont('helvetica','bold'); doc.setFontSize(9);
+        const time = [item.heure_debut, item.heure_fin].filter(Boolean).join(' - ');
+        doc.setTextColor(...OC_RED);
+        doc.text(pdfSafe(time), x, y);
+        doc.setTextColor(...OC_BLACK);
+        doc.text(pdfSafe(item.nom || ''), x + 26, y);
+        y += 4.2;
+        if (item.detail) {
+          doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(90,90,90);
+          doc.splitTextToSize(pdfSafe(item.detail), colW - 26).forEach(l => { doc.text(l, x + 26, y); y += 3.4; });
+          doc.setTextColor(...OC_BLACK);
+        }
+        y += 1.5;
+        return;
+      }
+
+      const e = item.ref, ei = item.ei;
+      const geo = geoByKey ? geoByKey[`${ji}-${ei}`] : null;
+      let adresse = e.adresse || (geo ? geo.adresse : '');
+      adresse = adresse.replace(/,?\s*France\s*$/i, '').trim();
+      const m = e.magasin_code ? state.magasinsByCode[e.magasin_code] : null;
+      const eff = effByKey ? effByKey[`${ji}-${ei}`] : null;
+
+      const isEvening = !!e.soiree;
+      const nbLines = 1 + (adresse ? 1 : 0) + (m ? 1 : 0) + (e.notes ? 1 : 0);
       if (isEvening) {
         doc.setFillColor(252, 237, 237);
-        doc.rect(x - 1.5, y - 3.2, colW + 1.5, rowH + 1, 'F');
+        doc.rect(x - 1.5, y - 3.2, colW + 1.5, nbLines * 4 + 3, 'F');
       }
 
       doc.setFont('helvetica','bold'); doc.setFontSize(9);
@@ -1477,24 +1572,42 @@ function layoutJours(doc, jours, W, mar, nCols, startIndex, maxY, topY) {
       doc.setTextColor(...OC_BLACK);
       const nomAffiche = (e.type === 'repas' || e.type === 'autre') ? e.nom : (e.nom || '').toUpperCase();
       doc.text(pdfSafe(nomAffiche || ''), x + 26, y);
-      y += 4.2;
-      if (e.adresse) {
+      if (e.type === 'magasin' && eff !== null && eff !== undefined) {
+        doc.setFont('helvetica','normal'); doc.setFontSize(6); doc.setTextColor(...OC_GREY);
+        doc.text(pdfSafe('Eff. : '), x, y + 4);
+        doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(...OC_BLACK);
+        doc.text(pdfSafe(String(eff)), x + doc.getTextWidth('Eff. : '), y + 4);
+      }
+      y += 4;
+
+      if (adresse) {
         doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(90,90,90);
-        doc.text(pdfSafe(e.adresse), x + 26, y);
+        doc.splitTextToSize(pdfSafe(adresse), colW - 26).forEach(l => { doc.text(l, x + 26, y); y += 3.4; });
         doc.setTextColor(...OC_BLACK);
-        y += 4;
+      }
+      if (m) {
+        const mgrRaw = m.manager;
+        const mgrDisplay = (!mgrRaw || mgrRaw === '0') ? 'Non renseigné' : titleCaseName(mgrRaw);
+        doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(90,90,90);
+        doc.text(pdfSafe(`Manager : ${mgrDisplay}`), x + 26, y);
+        doc.setTextColor(...OC_BLACK);
+        y += 3.4;
       }
       if (e.notes) {
         doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(90,90,90);
         doc.text(pdfSafe(e.notes), x + 26, y);
         doc.setTextColor(...OC_BLACK);
-        y += 4;
+        y += 3.4;
       }
       if (e.trajet_suivant) {
+        y += 0.5;
+        doc.setDrawColor(230,230,230); doc.setLineWidth(0.25);
+        doc.line(x + 26, y, x + colW, y);
+        y += 3;
         doc.setFont('helvetica','italic'); doc.setFontSize(7); doc.setTextColor(140,140,140);
         doc.text(pdfSafe('-> ' + e.trajet_suivant), x + 26, y);
         doc.setTextColor(...OC_BLACK);
-        y += 4.5;
+        y += 3.8;
       } else {
         y += 1.5;
       }
@@ -1517,15 +1630,14 @@ function drawBottomBand(doc, p, W, mar, y0, mapImage) {
   doc.line(mar, y0 - 4, W - mar, y0 - 4);
 
   const colGap = 8;
-  let x1, x2, x3, col1W, col2W, col3W;
+  let x1, x2, col1W, col2W, col3W;
 
   if (mapImage) {
-    const mapW = (W - 2*mar - 3*colGap) * 0.30;
-    col1W = (W - 2*mar - 3*colGap) * 0.235;
-    col2W = (W - 2*mar - 3*colGap) * 0.235;
-    col3W = (W - 2*mar - 3*colGap) * 0.23;
+    const mapW = (W - 2*mar - 2*colGap) * 0.30;
+    col1W = (W - 2*mar - 2*colGap) * 0.27;
+    col3W = (W - 2*mar - 2*colGap) * 0.43;
     const xMap = mar;
-    x1 = xMap + mapW + colGap; x2 = x1 + col1W + colGap; x3 = x2 + col2W + colGap;
+    x1 = xMap + mapW + colGap; x2 = x1 + col1W + colGap;
 
     doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...OC_RED);
     doc.text(pdfSafe('TRAJET'), xMap, y0);
@@ -1537,10 +1649,9 @@ function drawBottomBand(doc, p, W, mar, y0, mapImage) {
       doc.rect(xMap, y0 + 4, mapW, mapH);
     } catch (e) { console.error('Insertion carte PDF échouée', e); }
   } else {
-    col1W = (W - 2*mar - 2*colGap) * 0.34; // récap magasins
-    col2W = (W - 2*mar - 2*colGap) * 0.33; // transport
-    col3W = (W - 2*mar - 2*colGap) * 0.33; // hébergement
-    x1 = mar; x2 = x1 + col1W + colGap; x3 = x2 + col2W + colGap;
+    col1W = (W - 2*mar - colGap) * 0.42; // récap magasins
+    col3W = (W - 2*mar - colGap) * 0.55; // transport + hébergement
+    x1 = mar; x2 = x1 + col1W + colGap;
   }
 
   // ---- Récap magasins ----
@@ -1551,7 +1662,8 @@ function drawBottomBand(doc, p, W, mar, y0, mapImage) {
   doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.setTextColor(...OC_GREY);
   doc.text(pdfSafe('#'), x1, y);
   doc.text(pdfSafe('MAGASIN'), x1 + 5, y);
-  doc.text(pdfSafe('JOUR'), x1 + col1W - 18, y);
+  doc.text(pdfSafe('JOUR'), x1 + col1W - 28, y);
+  doc.text(pdfSafe('CRENEAU'), x1 + col1W - 15, y);
   doc.setDrawColor(220,220,220); doc.setLineWidth(0.25); doc.line(x1, y+1.3, x1+col1W, y+1.3);
   y += 5;
   doc.setFontSize(7.5);
@@ -1564,77 +1676,70 @@ function drawBottomBand(doc, p, W, mar, y0, mapImage) {
       doc.setFont('helvetica','normal'); doc.setTextColor(...OC_BLACK);
       doc.text(pdfSafe(e.nom || ''), x1 + 5, y);
       doc.setTextColor(...OC_GREY);
-      doc.text(pdfSafe(`J${ji+1} ${e.heure_debut||''}`), x1 + col1W - 18, y);
+      doc.text(pdfSafe(fmtDateShortFR(jour.date).split(' ')[0]), x1 + col1W - 28, y);
+      doc.text(pdfSafe([e.heure_debut,e.heure_fin].filter(Boolean).join('-')), x1 + col1W - 15, y);
       doc.setTextColor(...OC_BLACK);
-      y += 4.3;
+      y += 3.8;
       n++;
     });
   });
 
-  // ---- Transport ----
+  // ---- Transport + Hébergement (fusionnés pour gagner de la place) ----
   doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...OC_RED);
-  doc.text(pdfSafe('TRANSPORT'), x2, y0);
-  doc.setDrawColor(...OC_BLACK); doc.setLineWidth(0.4); doc.line(x2, y0+1.5, x2+col2W, y0+1.5);
   const mode = transportLabel(p);
-  const t = p.transport || {};
-  const transportLines = (() => {
-    if (p.transport_mode === 'train') {
-      return [
-        ['Reference', t.ref],
-        ['Aller - train', t.train_aller], ['Aller - depart', t.depart_aller], ['Aller - arrivee', t.arrivee_aller],
-        ['Aller - voiture/sieges', [t.voiture_aller, t.sieges_aller].filter(Boolean).join(' - ')],
-        ['Retour - train', t.train_retour], ['Retour - depart', t.depart_retour], ['Retour - arrivee', t.arrivee_retour],
-        ['Retour - voiture/sieges', [t.voiture_retour, t.sieges_retour].filter(Boolean).join(' - ')],
-      ];
-    }
-    if (p.transport_mode === 'avion') {
-      return [
-        ['Compagnie', t.compagnie], ['Reference', t.ref],
-        ['Aller - vol', t.vol_aller], ['Aller - depart', t.depart_aller], ['Aller - arrivee', t.arrivee_aller],
-        ['Retour - vol', t.vol_retour], ['Retour - depart', t.depart_retour], ['Retour - arrivee', t.arrivee_retour],
-      ];
-    }
-    if (p.transport_mode === 'voiture') return [['Notes', t.notes]];
-    return [];
-  })().filter(([,v]) => v);
-  const tCardH = mode ? Math.max(20, 9 + transportLines.length * 7.6) : 10;
-  doc.setFillColor(250,250,250); doc.rect(x2, y0+4, col2W, tCardH, 'F');
-  doc.setFillColor(...OC_RED); doc.rect(x2, y0+4, 1, tCardH, 'F');
-  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...OC_BLACK);
-  let ty = y0 + 9;
-  if (mode) {
-    doc.setFont('helvetica','bold'); doc.text(pdfSafe(mode), x2 + 4, ty); ty += 5;
-    doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(...OC_GREY);
-    transportLines.forEach(([label, v]) => {
-        const lines = doc.splitTextToSize(pdfSafe(`${label} : ${v}`), col2W - 8);
-        lines.forEach(l => { if (ty <= y0 + 4 + tCardH - 2) { doc.text(l, x2 + 4, ty); ty += 3.6; } });
-        ty += 1;
-      });
-  } else {
-    doc.setTextColor(...OC_GREY);
-    doc.text(pdfSafe('Aucun - passage 100% Paris/RP'), x2 + 4, ty);
-  }
-  doc.setTextColor(...OC_BLACK);
+  doc.text(pdfSafe(mode ? `${mode.toUpperCase()} - REF. ${(p.transport||{}).ref || ''}`.replace(/ - REF\.\s*$/,'') : 'TRANSPORT & HEBERGEMENT'), x2, y0);
+  doc.setDrawColor(...OC_BLACK); doc.setLineWidth(0.4); doc.line(x2, y0+1.5, x2+col3W, y0+1.5);
+  let ty = y0 + 5;
 
-  // ---- Hébergement ----
-  doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...OC_RED);
-  doc.text(pdfSafe('HEBERGEMENT'), x3, y0);
-  doc.setDrawColor(...OC_BLACK); doc.setLineWidth(0.4); doc.line(x3, y0+1.5, x3+col3W, y0+1.5);
-  const hCardH = p.hotel_nom ? 22 : 10;
-  doc.setFillColor(250,250,250); doc.rect(x3, y0+4, col3W, hCardH, 'F');
-  doc.setFillColor(...OC_RED); doc.rect(x3, y0+4, 1, hCardH, 'F');
-  let hy = y0 + 9;
-  if (p.hotel_nom) {
-    doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...OC_BLACK);
-    doc.text(pdfSafe(p.hotel_nom), x3 + 4, hy); hy += 4.5;
-    doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(...OC_GREY);
-    if (p.hotel_adresse) { doc.splitTextToSize(pdfSafe(p.hotel_adresse), col3W - 8).forEach(l => { doc.text(l, x3 + 4, hy); hy += 3.8; }); }
-    if (p.hotel_tel) { doc.text(pdfSafe(p.hotel_tel), x3 + 4, hy); }
-  } else {
-    doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(...OC_GREY);
-    doc.text(pdfSafe('Aucun - pas de nuitee prevue'), x3 + 4, hy);
+  const t = p.transport || {};
+  function transportCard(titre, lignes) {
+    lignes = lignes.filter(([,v]) => v);
+    if (!titre && !lignes.length) return;
+    if (ty > 196) return; // sécurité anti-débordement (page 210mm, footer vers 202mm)
+    const h = 3.8 + lignes.length * 2.7 + 2;
+    doc.setFillColor(250,250,250); doc.rect(x2, ty, col3W, h, 'F');
+    doc.setFillColor(...OC_RED); doc.rect(x2, ty, 1, h, 'F');
+    let cy = ty + 3.6;
+    doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(...OC_BLACK);
+    doc.splitTextToSize(pdfSafe(titre), col3W - 8).forEach(l => { doc.text(l, x2 + 4, cy); cy += 3; });
+    doc.setFont('helvetica','normal'); doc.setFontSize(6.3); doc.setTextColor(...OC_GREY);
+    lignes.forEach(([label, v]) => {
+      doc.splitTextToSize(pdfSafe(label ? `${label} : ${v}` : v), col3W - 8).forEach(l => { doc.text(l, x2 + 4, cy); cy += 2.7; });
+    });
+    doc.setTextColor(...OC_BLACK);
+    ty += h + 1.3;
   }
-  doc.setTextColor(...OC_BLACK);
+
+  if (p.transport_mode === 'train') {
+    transportCard(`${t.train_aller || 'Train aller'} - ${extractPlaceFromText(t.depart_aller)} -> ${extractPlaceFromText(t.arrivee_aller)}`, [
+      ['', [t.depart_aller, t.arrivee_aller].filter(Boolean).join(' -> ')],
+      ['', [t.ref?`Réf. ${t.ref}`:'', t.voiture_aller?`voiture ${t.voiture_aller}`:''].filter(Boolean).join(', ')],
+      ['', t.sieges_aller],
+    ]);
+    transportCard(`${t.train_retour || 'Train retour'} - ${extractPlaceFromText(t.depart_retour)} -> ${extractPlaceFromText(t.arrivee_retour)}`, [
+      ['', [t.depart_retour, t.arrivee_retour].filter(Boolean).join(' -> ')],
+      ['', [t.ref?`Réf. ${t.ref}`:'', t.voiture_retour?`voiture ${t.voiture_retour}`:''].filter(Boolean).join(', ')],
+      ['', t.sieges_retour],
+    ]);
+  } else if (p.transport_mode === 'avion') {
+    transportCard(`${t.vol_aller || 'Vol aller'} - ${extractPlaceFromText(t.depart_aller)} -> ${extractPlaceFromText(t.arrivee_aller)}`, [
+      ['', [t.depart_aller, t.arrivee_aller].filter(Boolean).join(' -> ')],
+      ['', [t.compagnie, t.ref?`Réf. ${t.ref}`:''].filter(Boolean).join(', ')],
+    ]);
+    transportCard(`${t.vol_retour || 'Vol retour'} - ${extractPlaceFromText(t.depart_retour)} -> ${extractPlaceFromText(t.arrivee_retour)}`, [
+      ['', [t.depart_retour, t.arrivee_retour].filter(Boolean).join(' -> ')],
+    ]);
+  } else if (p.transport_mode === 'voiture' && t.notes) {
+    transportCard('Voiture', [['Notes', t.notes]]);
+  }
+
+  if (p.hotel_nom) {
+    transportCard(p.hotel_nom, [['', p.hotel_adresse], ['', p.hotel_tel]]);
+  } else if (!mode) {
+    doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(...OC_GREY);
+    doc.text(pdfSafe('Aucun transport ni hébergement renseigné.'), x2, ty + 3);
+    doc.setTextColor(...OC_BLACK);
+  }
 }
 
 function drawFooter(doc, W, H, mar, page, totalPages) {
