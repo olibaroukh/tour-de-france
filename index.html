@@ -220,7 +220,7 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 <div id="toast" class="toast" style="display:none"></div>
 
 <script>
-window.APP_VERSION = '2026.08.27-7';
+window.APP_VERSION = '2026.08.27-8';
 
 // =====================================================================
 // CONFIG
@@ -264,6 +264,29 @@ function fmtDate(iso) {
   if (!iso) return '';
   const [y, m, d] = iso.split('-');
   return `${d}/${m}/${y}`;
+}
+
+const JOURS_FR = ['dimanche','lundi','mardi','mercredi','jeudi','vendredi','samedi'];
+const JOURS_FR_ABBR = ['dim','lun','mar','mer','jeu','ven','sam'];
+const MOIS_FR = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+
+// "vendredi 4 septembre 2026"
+function fmtDateLongFR(iso) {
+  if (!iso) return '';
+  const d = new Date(iso + 'T12:00:00');
+  const s = `${JOURS_FR[d.getDay()]} ${d.getDate()} ${MOIS_FR[d.getMonth()]} ${d.getFullYear()}`;
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// "ven 4/09"
+function fmtDateShortFR(iso) {
+  if (!iso) return '';
+  const d = new Date(iso + 'T12:00:00');
+  return `${JOURS_FR_ABBR[d.getDay()]} ${d.getDate()}/${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+
+function titleCaseName(s) {
+  return (s || '').toLowerCase().split(' ').filter(Boolean).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
 function dayCount(dateDebut, dateFin) {
@@ -1047,7 +1070,7 @@ function drawSingleDayParisRP(doc, p, W, H, mar, geoByKey, mapImage) {
 
   // --- en-tête ---
   doc.setFont('helvetica','bold'); doc.setFontSize(8.5);
-  const tabText = 'TOURNEE RESEAU';
+  const tabText = 'TOURNEE SUCCURSALES FRANCE';
   const tabW = doc.getTextWidth(tabText) + 6;
   doc.setFillColor(...OC_RED);
   doc.rect(mar, 8, tabW, 5.2, 'F');
@@ -1068,7 +1091,7 @@ function drawSingleDayParisRP(doc, p, W, H, mar, geoByKey, mapImage) {
 
   const participants = (p.participants || []).map(x => x.nom).join(' \u00b7 ');
   doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(...OC_GREY);
-  doc.text(pdfSafe(`${fmtDate(p.date_debut)} au ${fmtDate(p.date_fin)}  -  ${participants}`), mar, 33.5);
+  doc.text(pdfSafe(`${fmtDateLongFR(p.date_debut)}  -  ${participants}`), mar, 33.5);
   doc.setTextColor(...OC_BLACK);
 
   try {
@@ -1101,7 +1124,7 @@ function drawSingleDayParisRP(doc, p, W, H, mar, geoByKey, mapImage) {
   doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(...OC_RED);
   doc.text(pdfSafe('JOUR 1'), mar, jourY);
   doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(...OC_GREY);
-  doc.text(pdfSafe(fmtDate(jour.date)), mar + 17, jourY);
+  doc.text(pdfSafe(fmtDateShortFR(jour.date)), mar + 17, jourY);
   const nomsListe = etapes.filter(e => e.type==='magasin'||e.type==='franchise').map(e => e.nom).join(' \u00b7 ');
   if (nomsListe) {
     doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...OC_GREY);
@@ -1120,7 +1143,9 @@ function drawSingleDayParisRP(doc, p, W, H, mar, geoByKey, mapImage) {
   let y = jourY + 9;
   etapes.forEach((e, ei) => {
     const geo = geoByKey[`0-${ei}`];
-    const adresse = e.adresse || (geo ? geo.adresse : '');
+    let adresse = e.adresse || (geo ? geo.adresse : '');
+    adresse = adresse.replace(/,?\s*France\s*$/i, '').trim();
+    const m = e.magasin_code ? state.magasinsByCode[e.magasin_code] : null;
 
     doc.setFont('helvetica','bold'); doc.setFontSize(9.5);
     const time = [e.heure_debut, e.heure_fin].filter(Boolean).join(' - ');
@@ -1134,6 +1159,14 @@ function drawSingleDayParisRP(doc, p, W, H, mar, geoByKey, mapImage) {
       doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(90,90,90);
       doc.splitTextToSize(pdfSafe(adresse), leftW - 28).forEach(l => { doc.text(l, leftX + 28, y); y += 4; });
       doc.setTextColor(...OC_BLACK);
+    }
+    if (e.type === 'magasin' && m) {
+      const mgrRaw = m.manager;
+      const mgrDisplay = (!mgrRaw || mgrRaw === '0') ? 'Non renseigné' : titleCaseName(mgrRaw);
+      doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(90,90,90);
+      doc.text(pdfSafe(`Manager : ${mgrDisplay}`), leftX + 28, y);
+      doc.setTextColor(...OC_BLACK);
+      y += 4;
     }
     if (e.notes) {
       doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(90,90,90);
@@ -1149,13 +1182,17 @@ function drawSingleDayParisRP(doc, p, W, H, mar, geoByKey, mapImage) {
       if (nextGeo) travelText = estimateTravelTime(haversineKm(geo.lat, geo.lon, nextGeo.lat, nextGeo.lon));
     }
     if (travelText) {
+      y += 1.5;
+      doc.setDrawColor(230,230,230); doc.setLineWidth(0.25);
+      doc.line(leftX + 28, y, leftX + leftW, y);
+      y += 4;
       doc.setFont('helvetica','italic'); doc.setFontSize(7.5); doc.setTextColor(140,140,140);
       doc.text(pdfSafe('-> ' + travelText), leftX + 28, y);
       doc.setTextColor(...OC_BLACK);
       y += 5.5;
-    } else {
-      y += 2.5;
     }
+
+    y += 6; // espace supplémentaire entre deux magasins
   });
 
   y += 2;
@@ -1196,22 +1233,29 @@ function drawSingleDayParisRP(doc, p, W, H, mar, geoByKey, mapImage) {
   doc.setDrawColor(...OC_BLACK); doc.setLineWidth(0.4);
   doc.line(rightX, ry + 1.5, rightX + rightW, ry + 1.5);
   ry += 5.5;
+  const creneauCx = rightX + rightW * 0.72;
+  const telX = rightX + rightW;
   doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.setTextColor(...OC_GREY);
   doc.text(pdfSafe('#'), rightX, ry);
   doc.text(pdfSafe('MAGASIN'), rightX + 5, ry);
-  doc.text(pdfSafe('CRENEAU'), rightX + rightW - 22, ry);
+  doc.text(pdfSafe('CRENEAU'), creneauCx, ry, { align: 'center' });
+  doc.text(pdfSafe('TELEPHONE'), telX, ry, { align: 'right' });
   doc.setDrawColor(220,220,220); doc.setLineWidth(0.25);
   doc.line(rightX, ry + 1.3, rightX + rightW, ry + 1.3);
   ry += 5;
   doc.setFontSize(8);
   let n = 1;
-  etapes.filter(e => e.type==='magasin'||e.type==='franchise').forEach(e => {
+  etapes.filter(e => e.type==='magasin'||e.type==='franchise').forEach((e, idx) => {
+    const ei = etapes.indexOf(e);
+    const geo = geoByKey[`0-${ei}`];
     doc.setFont('helvetica','bold'); doc.setTextColor(...OC_RED);
     doc.text(String(n), rightX, ry);
     doc.setFont('helvetica','normal'); doc.setTextColor(...OC_BLACK);
     doc.text(pdfSafe(e.nom || ''), rightX + 5, ry);
     doc.setTextColor(...OC_GREY);
-    doc.text(pdfSafe(e.heure_debut || ''), rightX + rightW - 22, ry);
+    const creneau = [e.heure_debut, e.heure_fin].filter(Boolean).join('-');
+    doc.text(pdfSafe(creneau), creneauCx, ry, { align: 'center' });
+    doc.text(pdfSafe((geo && geo.telephone) ? geo.telephone : '-'), telX, ry, { align: 'right' });
     doc.setTextColor(...OC_BLACK);
     ry += 5.5;
     n++;
