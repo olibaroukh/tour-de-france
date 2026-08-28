@@ -220,7 +220,7 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 <div id="toast" class="toast" style="display:none"></div>
 
 <script>
-window.APP_VERSION = '2026.08.27-8';
+window.APP_VERSION = '2026.08.27-9';
 
 // =====================================================================
 // CONFIG
@@ -961,6 +961,28 @@ async function resolveAllStopsGeo(p) {
   return geoByKey;
 }
 
+// Effectif = nombre de collaborateurs importés (fichier CA) pour le magasin_code du jour.
+async function resolveEffectifs(p) {
+  const effByKey = {};
+  const countByCode = {};
+  const jours = p.jours || [];
+  for (let ji = 0; ji < jours.length; ji++) {
+    const etapes = jours[ji].etapes || [];
+    for (let ei = 0; ei < etapes.length; ei++) {
+      const e = etapes[ei];
+      if (e.type !== 'magasin' || !e.magasin_code) continue;
+      if (!(e.magasin_code in countByCode)) {
+        try {
+          const res = await fetch(`${API_BASE}/api/ca-collaborateurs?magasin_code=${encodeURIComponent(e.magasin_code)}`);
+          countByCode[e.magasin_code] = res.ok ? (await res.json()).length : null;
+        } catch (err) { countByCode[e.magasin_code] = null; }
+      }
+      effByKey[`${ji}-${ei}`] = countByCode[e.magasin_code];
+    }
+  }
+  return effByKey;
+}
+
 function haversineKm(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -1022,6 +1044,7 @@ async function generatePDF() {
 
   toast('Génération de la carte…', 6000);
   const geoByKey = await resolveAllStopsGeo(p);
+  const effByKey = await resolveEffectifs(p);
   const mapImage = await buildPassageMapImage(p, geoByKey);
   if (!mapImage) toast('⚠ Carte indisponible — PDF généré sans carte', 4000);
 
@@ -1032,7 +1055,7 @@ async function generatePDF() {
   const isParisRP = !transportLabel(p);
 
   if (isParisRP && nJours === 1) {
-    drawSingleDayParisRP(doc, p, W, H, mar, geoByKey, mapImage);
+    drawSingleDayParisRP(doc, p, W, H, mar, geoByKey, mapImage, effByKey);
     doc.save(`Passage-${(p.titre||'tournee').replace(/[^a-z0-9]+/gi,'-')}.pdf`);
     return;
   }
@@ -1064,7 +1087,7 @@ async function generatePDF() {
 // Mise en page dédiée : passage 1 jour, sans transport (Paris/RP).
 // Colonne gauche = programme détaillé ; colonne droite = carte + récap magasins.
 // ---------------------------------------------------------------------------
-function drawSingleDayParisRP(doc, p, W, H, mar, geoByKey, mapImage) {
+function drawSingleDayParisRP(doc, p, W, H, mar, geoByKey, mapImage, effByKey) {
   const jour = p.jours[0];
   const etapes = jour.etapes || [];
 
@@ -1083,7 +1106,7 @@ function drawSingleDayParisRP(doc, p, W, H, mar, geoByKey, mapImage) {
   doc.text(pdfSafe(titre), mar, 22);
   const titreW = doc.getTextWidth(pdfSafe(titre));
   doc.setFillColor(...OC_RED);
-  doc.rect(mar + titreW + 1.5, 19.3, 2.1, 2.1, 'F');
+  doc.circle(mar + titreW + 3.2, 20.3, 1.2, 'F');
 
   doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(...OC_RED);
   doc.text(pdfSafe('VISITE DES POINTS DE VENTES, ENVIRONNEMENT EXTERIEUR, ENTRETIENS INDIVIDUELS.'), mar, 28.5);
@@ -1154,6 +1177,15 @@ function drawSingleDayParisRP(doc, p, W, H, mar, geoByKey, mapImage) {
     doc.setTextColor(...OC_BLACK);
     doc.text(pdfSafe((e.nom||'').toUpperCase()), leftX + 28, y);
     y += 4.6;
+
+    if (e.type === 'magasin') {
+      const eff = effByKey ? effByKey[`0-${ei}`] : null;
+      doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(...OC_GREY);
+      doc.text(pdfSafe('Effectif :'), leftX, y);
+      doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(...OC_BLACK);
+      doc.text(pdfSafe(eff !== null && eff !== undefined ? String(eff) : '-'), leftX, y + 4.5);
+      doc.setTextColor(...OC_BLACK);
+    }
 
     if (adresse) {
       doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(90,90,90);
@@ -1281,7 +1313,7 @@ function drawHeader(doc, p, W, mar, suite, isParisRP) {
   doc.text(pdfSafe(titre), mar, 22);
   const titreW = doc.getTextWidth(pdfSafe(titre));
   doc.setFillColor(...OC_RED);
-  doc.rect(mar + titreW + 1.5, 19.3, 2.3, 2.3, 'F');
+  doc.circle(mar + titreW + 3.3, 20.3, 1.3, 'F');
 
   // sous-titre rouge
   const nJours = (p.jours||[]).length;

@@ -1,6 +1,6 @@
 // Tour de France — Service Worker
 // À bumper en même temps que APP_VERSION dans index.html (convention écosystème OC).
-const SW_VERSION = '2026.08.27-8';
+const SW_VERSION = '2026.08.27-9';
 const CACHE_NAME = 'tdf-cache-' + SW_VERSION;
 
 const CORE_ASSETS = [
