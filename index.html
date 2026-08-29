@@ -227,7 +227,7 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 <div id="toast" class="toast" style="display:none"></div>
 
 <script>
-window.APP_VERSION = '2026.08.29-1';
+window.APP_VERSION = '2026.08.29-2';
 
 // =====================================================================
 // CONFIG
@@ -1628,7 +1628,9 @@ function layoutJours(doc, p, jours, W, mar, nCols, startIndex, nJoursTotal, maxY
     const x = x0 + i * (colW + gap);
     let y = y0;
 
-    doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(...OC_RED);
+    const dayTextColors = [OC_RED, OC_BLACK, [136,136,136]]; // même cycle que les tracés de la carte
+    const dayColor = dayTextColors[ji % dayTextColors.length];
+    doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(...dayColor);
     doc.text(pdfSafe(`JOUR ${ji + 1}`), x, y);
     doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...OC_GREY);
     doc.text(pdfSafe(fmtDateShortFR(jour.date)), x + 17, y);
@@ -1753,9 +1755,9 @@ function drawBottomBand(doc, p, W, mar, y0, mapImage) {
     const xMap = mar;
     x1 = xMap + mapW + colGap; x2 = x1 + col1W + colGap;
 
-    doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...OC_RED);
+    doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...OC_BLACK);
     doc.text(pdfSafe('TRAJET'), xMap, y0);
-    doc.setDrawColor(...OC_BLACK); doc.setLineWidth(0.4); doc.line(xMap, y0+1.5, xMap+mapW, y0+1.5);
+    doc.setDrawColor(...OC_RED); doc.setLineWidth(0.6); doc.line(xMap, y0+1.5, xMap+doc.getTextWidth('TRAJET'), y0+1.5);
     try {
       const mapH = mapW * (500/800);
       doc.addImage(mapImage, 'PNG', xMap, y0 + 4, mapW, mapH);
@@ -1769,9 +1771,9 @@ function drawBottomBand(doc, p, W, mar, y0, mapImage) {
   }
 
   // ---- Récap magasins ----
-  doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...OC_RED);
+  doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...OC_BLACK);
   doc.text(pdfSafe('LES MAGASINS'), x1, y0);
-  doc.setDrawColor(...OC_BLACK); doc.setLineWidth(0.4); doc.line(x1, y0+1.5, x1+col1W, y0+1.5);
+  doc.setDrawColor(...OC_RED); doc.setLineWidth(0.6); doc.line(x1, y0+1.5, x1+doc.getTextWidth('LES MAGASINS'), y0+1.5);
   let y = y0 + 5.5;
   doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.setTextColor(...OC_GREY);
   doc.text(pdfSafe('#'), x1, y);
@@ -1799,10 +1801,11 @@ function drawBottomBand(doc, p, W, mar, y0, mapImage) {
   });
 
   // ---- Transport + Hébergement (fusionnés pour gagner de la place) ----
-  doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...OC_RED);
+  doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...OC_BLACK);
   const mode = transportLabel(p);
-  doc.text(pdfSafe(mode ? `${mode.toUpperCase()} - REF. ${(p.transport||{}).ref || ''}`.replace(/ - REF\.\s*$/,'') : 'TRANSPORT & HEBERGEMENT'), x2, y0);
-  doc.setDrawColor(...OC_BLACK); doc.setLineWidth(0.4); doc.line(x2, y0+1.5, x2+col3W, y0+1.5);
+  const sectionTitle = mode ? `${mode.toUpperCase()} - REF. ${(p.transport||{}).ref || ''}`.replace(/ - REF\.\s*$/,'') : 'TRANSPORT & HEBERGEMENT';
+  doc.text(pdfSafe(sectionTitle), x2, y0);
+  doc.setDrawColor(...OC_RED); doc.setLineWidth(0.6); doc.line(x2, y0+1.5, x2+doc.getTextWidth(pdfSafe(sectionTitle)), y0+1.5);
   let ty = y0 + 5;
 
   const t = p.transport || {};
