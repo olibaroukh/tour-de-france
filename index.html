@@ -227,7 +227,7 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 <div id="toast" class="toast" style="display:none"></div>
 
 <script>
-window.APP_VERSION = '2026.08.29-3';
+window.APP_VERSION = '2026.08.29-4';
 
 // =====================================================================
 // CONFIG
@@ -837,6 +837,7 @@ function renderPickerResults() {
       <div class="field-group"><label>Nom</label><input type="text" id="pk-fr-nom"></div>
       <div class="field-group"><label>Adresse</label><input type="text" id="pk-fr-adresse"></div>
       <div class="field-group"><label>Ville</label><input type="text" id="pk-fr-ville"></div>
+      <div class="field-group"><label>Franchisé (prénom et nom)</label><input type="text" id="pk-fr-franchise" placeholder="Ex. Jean Dupont"></div>
       <button class="btn-primary" onclick="pickFranchise()">Ajouter cette franchise</button>
     `;
   } else {
@@ -890,6 +891,7 @@ function pickFranchise() {
     nom,
     adresse: document.getElementById('pk-fr-adresse').value.trim(),
     ville: document.getElementById('pk-fr-ville').value.trim(),
+    franchise_nom: document.getElementById('pk-fr-franchise').value.trim(),
   });
 }
 function pickFreeEtape() {
@@ -1439,6 +1441,12 @@ function drawSingleDayParisRP(doc, p, W, H, mar, geoByKey, mapImage, effByKey) {
       doc.setTextColor(...OC_BLACK);
       y += 4;
     }
+    if (e.type === 'franchise' && e.franchise_nom) {
+      doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(90,90,90);
+      doc.text(pdfSafe(`Franchisé : ${e.franchise_nom}`), leftX + 28, y);
+      doc.setTextColor(...OC_BLACK);
+      y += 4;
+    }
     if (e.notes) {
       doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(90,90,90);
       doc.text(pdfSafe(e.notes), leftX + 28, y);
@@ -1673,7 +1681,7 @@ function layoutJours(doc, p, jours, W, mar, nCols, startIndex, nJoursTotal, maxY
       const eff = effByKey ? effByKey[`${ji}-${ei}`] : null;
 
       const isEvening = !!e.soiree;
-      const nbLines = 1 + (adresse ? 1 : 0) + (m ? 1 : 0) + (e.notes ? 1 : 0);
+      const nbLines = 1 + (adresse ? 1 : 0) + (m ? 1 : 0) + (e.type==='franchise' && e.franchise_nom ? 1 : 0) + (e.notes ? 1 : 0);
       if (isEvening) {
         doc.setFillColor(252, 237, 237);
         doc.rect(x - 1.5, y - 3.2, colW + 1.5, 4 + (nbLines - 1) * 3.4 + 2, 'F');
@@ -1704,6 +1712,12 @@ function layoutJours(doc, p, jours, W, mar, nCols, startIndex, nJoursTotal, maxY
         const mgrDisplay = (!mgrRaw || mgrRaw === '0') ? 'Non renseigné' : titleCaseName(mgrRaw);
         doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(90,90,90);
         doc.text(pdfSafe(`Manager : ${mgrDisplay}`), x + 26, y);
+        doc.setTextColor(...OC_BLACK);
+        y += 3.4;
+      }
+      if (e.type === 'franchise' && e.franchise_nom) {
+        doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(90,90,90);
+        doc.text(pdfSafe(`Franchisé : ${e.franchise_nom}`), x + 26, y);
         doc.setTextColor(...OC_BLACK);
         y += 3.4;
       }
