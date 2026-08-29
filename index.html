@@ -227,7 +227,7 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 <div id="toast" class="toast" style="display:none"></div>
 
 <script>
-window.APP_VERSION = '2026.08.28-9';
+window.APP_VERSION = '2026.08.29-1';
 
 // =====================================================================
 // CONFIG
@@ -1252,7 +1252,10 @@ async function buildPassageMapImage(p, geoByKey) {
   // ordre final : gare/hôtel d'abord, magasins ensuite (dessinés par-dessus si superposition)
   // Empiriquement, Google Static Maps dessine les marqueurs déclarés en PREMIER par-dessus
   // les suivants (pas l'inverse) — donc les magasins doivent être en tête ici, la gare/l'hôtel après.
-  const points = [...stopPoints, ...hubPoints];
+  // Google Static Maps dessine les marqueurs déclarés en DERNIER par-dessus les précédents —
+  // gare/hôtel doivent donc être déclarés en premier, magasins en dernier, pour que ces
+  // derniers restent visibles en cas de superposition.
+  const points = [...hubPoints, ...stopPoints];
   if (points.length < 1) return null;
 
   try {
