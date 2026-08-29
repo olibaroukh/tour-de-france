@@ -227,7 +227,7 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 <div id="toast" class="toast" style="display:none"></div>
 
 <script>
-window.APP_VERSION = '2026.08.28-6';
+window.APP_VERSION = '2026.08.28-7';
 
 // =====================================================================
 // CONFIG
@@ -1009,6 +1009,7 @@ async function resolveMagasinGeo(code) {
 // Géocodage par adresse libre (franchise, hôtel, gare) — pas de code stable réutilisable,
 // donc simple cache de session (par valeur exacte d'adresse) plutôt qu'un cache serveur.
 const addressGeoCache = {};
+let lastAddressGeoError = null;
 async function resolveAddressGeo(address) {
   if (!address) return null;
   if (addressGeoCache[address]) return addressGeoCache[address];
@@ -1017,12 +1018,18 @@ async function resolveAddressGeo(address) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ address })
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      console.error('Géocodage adresse échoué', address, res.status, body.error || '');
+      lastAddressGeoError = `${address} : ${body.error || 'HTTP ' + res.status}`;
+      return null;
+    }
     const row = await res.json();
     addressGeoCache[address] = row;
     return row;
   } catch (e) {
     console.error('Géocodage adresse échoué', address, e);
+    lastAddressGeoError = `${address} : ${e.message}`;
     return null;
   }
 }
@@ -1237,12 +1244,14 @@ async function generatePDF() {
   if (!p.jours || !p.jours.length) { toast('Ajoutez au moins un jour avant de générer le PDF'); return; }
 
   toast('Génération de la carte…', 6000);
+  lastAddressGeoError = null;
   const geoByKey = await resolveAllStopsGeo(p);
   const geoFailures = geoByKey.__failures || [];
   const effByKey = await resolveEffectifs(p);
   const mapImage = await buildPassageMapImage(p, geoByKey);
   if (!mapImage) toast('⚠ Carte indisponible — PDF généré sans carte', 4000);
-  if (geoFailures.length) toast(`⚠ Non localisé(s) sur la carte : ${geoFailures.join(', ')}`, 7000);
+  if (geoFailures.length) toast(`⚠ Non localisé(s) sur la carte : ${geoFailures.join(', ')}${lastAddressGeoError ? ' — ' + lastAddressGeoError : ''}`, 9000);
+  else if (lastAddressGeoError) toast(`⚠ Gare/hôtel non localisé(s) — ${lastAddressGeoError}`, 9000);
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
