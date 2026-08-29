@@ -227,7 +227,7 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 <div id="toast" class="toast" style="display:none"></div>
 
 <script>
-window.APP_VERSION = '2026.08.29-2';
+window.APP_VERSION = '2026.08.29-3';
 
 // =====================================================================
 // CONFIG
@@ -1217,9 +1217,9 @@ async function buildPassageMapImage(p, geoByKey) {
 
   // pins gare/hôtel en premier (donc dessinés en dessous des pins magasins, ajoutés plus bas)
   const hubPoints = [];
-  if (gareAllerGeo) hubPoints.push({ lat: gareAllerGeo.lat, lon: gareAllerGeo.lon, label: 'G', color: '1A1A1A' });
-  if (hotelGeo) hubPoints.push({ lat: hotelGeo.lat, lon: hotelGeo.lon, label: 'H', color: '1A1A1A' });
-  if (gareRetourGeo && gareRetourGeo !== gareAllerGeo) hubPoints.push({ lat: gareRetourGeo.lat, lon: gareRetourGeo.lon, label: 'G', color: '1A1A1A' });
+  if (gareAllerGeo) hubPoints.push({ lat: gareAllerGeo.lat, lon: gareAllerGeo.lon, color: '1A1A1A', small: true });
+  if (hotelGeo) hubPoints.push({ lat: hotelGeo.lat, lon: hotelGeo.lon, color: '1A1A1A', small: true });
+  if (gareRetourGeo && gareRetourGeo !== gareAllerGeo) hubPoints.push({ lat: gareRetourGeo.lat, lon: gareRetourGeo.lon, color: '1A1A1A', small: true });
 
   for (let ji = 0; ji < nJours; ji++) {
     const color = dayColors[ji % dayColors.length];
@@ -1392,7 +1392,7 @@ function drawSingleDayParisRP(doc, p, W, H, mar, geoByKey, mapImage, effByKey) {
     doc.text(pdfSafe(nomsListe), mar + 40, jourY);
   }
   doc.setDrawColor(...OC_BLACK); doc.setLineWidth(0.5);
-  doc.line(mar, jourY + 2, W - mar, jourY + 2);
+  doc.line(mar, jourY + 2, mar + (W - 2*mar - 12) * 0.56, jourY + 2);
   doc.setTextColor(...OC_BLACK);
 
   // --- 2 colonnes : programme (gauche) / carte + récap (droite) ---
@@ -1479,10 +1479,10 @@ function drawSingleDayParisRP(doc, p, W, H, mar, geoByKey, mapImage, effByKey) {
 
   // --- colonne droite : carte + récap magasins ---
   let ry = jourY + 9;
-  doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...OC_RED);
+  doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...OC_BLACK);
   doc.text(pdfSafe('TRAJET DU JOUR'), rightX, ry);
-  doc.setDrawColor(...OC_BLACK); doc.setLineWidth(0.4);
-  doc.line(rightX, ry + 1.5, rightX + rightW, ry + 1.5);
+  doc.setDrawColor(...OC_RED); doc.setLineWidth(0.6);
+  doc.line(rightX, ry + 1.5, rightX + doc.getTextWidth('TRAJET DU JOUR'), ry + 1.5);
   ry += 5;
 
   if (mapImage) {
@@ -1499,10 +1499,10 @@ function drawSingleDayParisRP(doc, p, W, H, mar, geoByKey, mapImage, effByKey) {
     ry += 7;
   }
 
-  doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(...OC_RED);
+  doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(...OC_BLACK);
   doc.text(pdfSafe('LES MAGASINS'), rightX, ry);
-  doc.setDrawColor(...OC_BLACK); doc.setLineWidth(0.4);
-  doc.line(rightX, ry + 1.5, rightX + rightW, ry + 1.5);
+  doc.setDrawColor(...OC_RED); doc.setLineWidth(0.6);
+  doc.line(rightX, ry + 1.5, rightX + doc.getTextWidth('LES MAGASINS'), ry + 1.5);
   ry += 5.5;
   const creneauCx = rightX + rightW * 0.72;
   const telX = rightX + rightW;
