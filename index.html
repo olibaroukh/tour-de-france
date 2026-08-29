@@ -227,7 +227,7 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 <div id="toast" class="toast" style="display:none"></div>
 
 <script>
-window.APP_VERSION = '2026.08.28-5';
+window.APP_VERSION = '2026.08.28-6';
 
 // =====================================================================
 // CONFIG
@@ -1006,6 +1006,27 @@ async function resolveMagasinGeo(code) {
 // Résout d'un coup le géocodage de toutes les étapes "magasin" du passage.
 // Retourne une map "jourIndex-etapeIndex" -> géo, réutilisée pour la carte,
 // l'adresse affichée et l'estimation des trajets.
+// Géocodage par adresse libre (franchise, hôtel, gare) — pas de code stable réutilisable,
+// donc simple cache de session (par valeur exacte d'adresse) plutôt qu'un cache serveur.
+const addressGeoCache = {};
+async function resolveAddressGeo(address) {
+  if (!address) return null;
+  if (addressGeoCache[address]) return addressGeoCache[address];
+  try {
+    const res = await fetch(`${API_BASE}/api/geocode-address`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address })
+    });
+    if (!res.ok) return null;
+    const row = await res.json();
+    addressGeoCache[address] = row;
+    return row;
+  } catch (e) {
+    console.error('Géocodage adresse échoué', address, e);
+    return null;
+  }
+}
+
 async function resolveAllStopsGeo(p) {
   const geoByKey = {};
   const failures = [];
@@ -1018,6 +1039,12 @@ async function resolveAllStopsGeo(p) {
         const geo = await resolveMagasinGeo(e.magasin_code);
         if (geo) geoByKey[`${ji}-${ei}`] = geo;
         else failures.push(e.nom || e.magasin_code);
+      } else if (e.type === 'franchise' && e.adresse) {
+        const geo = await resolveAddressGeo(e.adresse);
+        if (geo) geoByKey[`${ji}-${ei}`] = geo;
+        else failures.push(e.nom || 'Franchise');
+      } else if (e.type === 'franchise' && !e.adresse) {
+        failures.push(e.nom || 'Franchise (adresse manquante)');
       }
     }
   }
@@ -1142,15 +1169,39 @@ function buildDisplayItems(p, ji, nJours) {
 // Construit la carte du passage (image Google Maps Static, pins + trajets colorés par jour).
 async function buildPassageMapImage(p, geoByKey) {
   const jours = p.jours || [];
+  const nJours = jours.length;
   const dayColors = ['CC1719', '1A1A1A', '888888']; // rouge OC / noir / gris (jour 1 / 2 / 3)
   const points = [];
   const routes = [];
   let seq = 1;
 
-  for (let ji = 0; ji < jours.length; ji++) {
+  // Gare (déduite du texte de transport) et hôtel — géocodés une fois, réutilisés
+  // à chaque endroit du trajet où ils interviennent (contrairement à un passage 1 jour
+  // qui part directement d'un magasin, ici le trajet commence à la gare).
+  const t = p.transport || {};
+  let gareAllerGeo = null, gareRetourGeo = null, hotelGeo = null;
+  if (p.transport_mode === 'train' || p.transport_mode === 'avion') {
+    const placeAller = extractPlaceFromText(t.arrivee_aller);
+    if (placeAller) gareAllerGeo = await resolveAddressGeo(placeAller);
+    const placeRetour = extractPlaceFromText(t.depart_retour);
+    if (placeRetour) gareRetourGeo = (placeRetour === placeAller && gareAllerGeo) ? gareAllerGeo : await resolveAddressGeo(placeRetour);
+  }
+  if (p.hotel_nom && p.hotel_adresse && nJours > 1) {
+    hotelGeo = await resolveAddressGeo(p.hotel_adresse);
+  }
+
+  if (gareAllerGeo) points.push({ lat: gareAllerGeo.lat, lon: gareAllerGeo.lon, label: 'G', color: '1A1A1A' });
+  if (hotelGeo) points.push({ lat: hotelGeo.lat, lon: hotelGeo.lon, label: 'H', color: '1A1A1A' });
+  if (gareRetourGeo && gareRetourGeo !== gareAllerGeo) points.push({ lat: gareRetourGeo.lat, lon: gareRetourGeo.lon, label: 'G', color: '1A1A1A' });
+
+  for (let ji = 0; ji < nJours; ji++) {
     const color = dayColors[ji % dayColors.length];
     const routePoints = [];
     const etapes = jours[ji].etapes || [];
+
+    if (ji === 0 && gareAllerGeo) routePoints.push({ lat: gareAllerGeo.lat, lon: gareAllerGeo.lon });
+    if (hotelGeo) routePoints.push({ lat: hotelGeo.lat, lon: hotelGeo.lon }); // départ du matin depuis l'hôtel
+
     for (let ei = 0; ei < etapes.length; ei++) {
       const geo = geoByKey[`${ji}-${ei}`];
       if (!geo) continue;
@@ -1158,6 +1209,10 @@ async function buildPassageMapImage(p, geoByKey) {
       routePoints.push({ lat: geo.lat, lon: geo.lon });
       seq++;
     }
+
+    if (hotelGeo && ji < nJours - 1) routePoints.push({ lat: hotelGeo.lat, lon: hotelGeo.lon }); // retour à l'hôtel le soir
+    if (ji === nJours - 1 && gareRetourGeo) routePoints.push({ lat: gareRetourGeo.lat, lon: gareRetourGeo.lon });
+
     if (routePoints.length > 1) routes.push({ color, points: routePoints });
   }
 
