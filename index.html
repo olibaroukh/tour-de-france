@@ -227,7 +227,7 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 <div id="toast" class="toast" style="display:none"></div>
 
 <script>
-window.APP_VERSION = '2026.08.28-8';
+window.APP_VERSION = '2026.08.28-9';
 
 // =====================================================================
 // CONFIG
@@ -1250,7 +1250,9 @@ async function buildPassageMapImage(p, geoByKey) {
   }
 
   // ordre final : gare/hôtel d'abord, magasins ensuite (dessinés par-dessus si superposition)
-  const points = [...hubPoints, ...stopPoints];
+  // Empiriquement, Google Static Maps dessine les marqueurs déclarés en PREMIER par-dessus
+  // les suivants (pas l'inverse) — donc les magasins doivent être en tête ici, la gare/l'hôtel après.
+  const points = [...stopPoints, ...hubPoints];
   if (points.length < 1) return null;
 
   try {
@@ -1669,7 +1671,7 @@ function layoutJours(doc, p, jours, W, mar, nCols, startIndex, nJoursTotal, maxY
       const nbLines = 1 + (adresse ? 1 : 0) + (m ? 1 : 0) + (e.notes ? 1 : 0);
       if (isEvening) {
         doc.setFillColor(252, 237, 237);
-        doc.rect(x - 1.5, y - 3.2, colW + 1.5, nbLines * 4 + 3, 'F');
+        doc.rect(x - 1.5, y - 3.2, colW + 1.5, 4 + (nbLines - 1) * 3.4 + 2, 'F');
       }
 
       doc.setFont('helvetica','bold'); doc.setFontSize(9);
@@ -1801,13 +1803,13 @@ function drawBottomBand(doc, p, W, mar, y0, mapImage) {
   let ty = y0 + 5;
 
   const t = p.transport || {};
-  function transportCard(titre, lignes) {
+  function transportCard(titre, lignes, barColor) {
     lignes = lignes.filter(([,v]) => v);
     if (!titre && !lignes.length) return;
     if (ty > 196) return; // sécurité anti-débordement (page 210mm, footer vers 202mm)
     const h = 3.8 + lignes.length * 2.7 + 2;
     doc.setFillColor(250,250,250); doc.rect(x2, ty, col3W, h, 'F');
-    doc.setFillColor(...OC_RED); doc.rect(x2, ty, 1, h, 'F');
+    doc.setFillColor(...(barColor || OC_RED)); doc.rect(x2, ty, 1, h, 'F');
     let cy = ty + 3.6;
     doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(...OC_BLACK);
     doc.splitTextToSize(pdfSafe(titre), col3W - 8).forEach(l => { doc.text(l, x2 + 4, cy); cy += 3; });
@@ -1843,7 +1845,7 @@ function drawBottomBand(doc, p, W, mar, y0, mapImage) {
   }
 
   if (p.hotel_nom) {
-    transportCard(p.hotel_nom, [['', p.hotel_adresse], ['', p.hotel_tel]]);
+    transportCard(p.hotel_nom, [['', p.hotel_adresse], ['', p.hotel_tel]], OC_BLACK);
   } else if (!mode) {
     doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(...OC_GREY);
     doc.text(pdfSafe('Aucun transport ni hébergement renseigné.'), x2, ty + 3);
