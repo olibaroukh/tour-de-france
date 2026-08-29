@@ -227,7 +227,7 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 <div id="toast" class="toast" style="display:none"></div>
 
 <script>
-window.APP_VERSION = '2026.08.28-7';
+window.APP_VERSION = '2026.08.28-8';
 
 // =====================================================================
 // CONFIG
@@ -1174,11 +1174,29 @@ function buildDisplayItems(p, ji, nJours) {
 }
 
 // Construit la carte du passage (image Google Maps Static, pins + trajets colorés par jour).
+// Simule un trait en pointillé (Google Static Maps ne le supporte pas nativement) :
+// plusieurs petits segments avec des trous, plutôt qu'un trait plein continu.
+function buildDashSegments(p1, p2, color, count) {
+  count = count || 7;
+  const segs = [];
+  for (let i = 0; i < count; i += 2) {
+    const t0 = i / count, t1 = (i + 0.55) / count;
+    segs.push({
+      color,
+      points: [
+        { lat: p1.lat + (p2.lat - p1.lat) * t0, lon: p1.lon + (p2.lon - p1.lon) * t0 },
+        { lat: p1.lat + (p2.lat - p1.lat) * t1, lon: p1.lon + (p2.lon - p1.lon) * t1 },
+      ],
+    });
+  }
+  return segs;
+}
+
 async function buildPassageMapImage(p, geoByKey) {
   const jours = p.jours || [];
   const nJours = jours.length;
   const dayColors = ['CC1719', '1A1A1A', '888888']; // rouge OC / noir / gris (jour 1 / 2 / 3)
-  const points = [];
+  const stopPoints = [];   // pins magasins/franchises — ajoutés en dernier pour rester au-dessus
   const routes = [];
   let seq = 1;
 
@@ -1197,32 +1215,42 @@ async function buildPassageMapImage(p, geoByKey) {
     hotelGeo = await resolveAddressGeo(p.hotel_adresse);
   }
 
-  if (gareAllerGeo) points.push({ lat: gareAllerGeo.lat, lon: gareAllerGeo.lon, label: 'G', color: '1A1A1A' });
-  if (hotelGeo) points.push({ lat: hotelGeo.lat, lon: hotelGeo.lon, label: 'H', color: '1A1A1A' });
-  if (gareRetourGeo && gareRetourGeo !== gareAllerGeo) points.push({ lat: gareRetourGeo.lat, lon: gareRetourGeo.lon, label: 'G', color: '1A1A1A' });
+  // pins gare/hôtel en premier (donc dessinés en dessous des pins magasins, ajoutés plus bas)
+  const hubPoints = [];
+  if (gareAllerGeo) hubPoints.push({ lat: gareAllerGeo.lat, lon: gareAllerGeo.lon, label: 'G', color: '1A1A1A' });
+  if (hotelGeo) hubPoints.push({ lat: hotelGeo.lat, lon: hotelGeo.lon, label: 'H', color: '1A1A1A' });
+  if (gareRetourGeo && gareRetourGeo !== gareAllerGeo) hubPoints.push({ lat: gareRetourGeo.lat, lon: gareRetourGeo.lon, label: 'G', color: '1A1A1A' });
 
   for (let ji = 0; ji < nJours; ji++) {
     const color = dayColors[ji % dayColors.length];
-    const routePoints = [];
+    const mainPoints = [];
     const etapes = jours[ji].etapes || [];
 
-    if (ji === 0 && gareAllerGeo) routePoints.push({ lat: gareAllerGeo.lat, lon: gareAllerGeo.lon });
-    if (hotelGeo) routePoints.push({ lat: hotelGeo.lat, lon: hotelGeo.lon }); // départ du matin depuis l'hôtel
+    if (ji === 0 && gareAllerGeo) mainPoints.push({ lat: gareAllerGeo.lat, lon: gareAllerGeo.lon });
+    if (hotelGeo) mainPoints.push({ lat: hotelGeo.lat, lon: hotelGeo.lon }); // départ du matin depuis l'hôtel
 
     for (let ei = 0; ei < etapes.length; ei++) {
       const geo = geoByKey[`${ji}-${ei}`];
       if (!geo) continue;
-      points.push({ lat: geo.lat, lon: geo.lon, label: String(seq > 9 ? (seq % 10) : seq), color });
-      routePoints.push({ lat: geo.lat, lon: geo.lon });
+      stopPoints.push({ lat: geo.lat, lon: geo.lon, label: String(seq > 9 ? (seq % 10) : seq), color });
+      mainPoints.push({ lat: geo.lat, lon: geo.lon });
       seq++;
     }
 
-    if (hotelGeo && ji < nJours - 1) routePoints.push({ lat: hotelGeo.lat, lon: hotelGeo.lon }); // retour à l'hôtel le soir
-    if (ji === nJours - 1 && gareRetourGeo) routePoints.push({ lat: gareRetourGeo.lat, lon: gareRetourGeo.lon });
+    if (mainPoints.length > 1) routes.push({ color, points: mainPoints });
 
-    if (routePoints.length > 1) routes.push({ color, points: routePoints });
+    // dernier trajet du jour (retour vers l'hôtel ou la gare) : en pointillé, pour le différencier
+    const lastStore = mainPoints[mainPoints.length - 1];
+    let returnPoint = null;
+    if (hotelGeo && ji < nJours - 1) returnPoint = { lat: hotelGeo.lat, lon: hotelGeo.lon };
+    else if (ji === nJours - 1 && gareRetourGeo) returnPoint = { lat: gareRetourGeo.lat, lon: gareRetourGeo.lon };
+    if (returnPoint && lastStore) {
+      routes.push(...buildDashSegments(lastStore, returnPoint, color));
+    }
   }
 
+  // ordre final : gare/hôtel d'abord, magasins ensuite (dessinés par-dessus si superposition)
+  const points = [...hubPoints, ...stopPoints];
   if (points.length < 1) return null;
 
   try {
