@@ -192,6 +192,11 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
     <div id="saisie-container"></div>
   </div>
 
+  <!-- ===================== VUE FICHE MAGASIN ===================== -->
+  <div class="view" id="view-fiche-magasin">
+    <div id="fiche-magasin-container"></div>
+  </div>
+
 </div>
 
 <button id="fab" onclick="openNewPassage()">+</button>
@@ -227,7 +232,7 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 <div id="toast" class="toast" style="display:none"></div>
 
 <script>
-window.APP_VERSION = '2026.08.29-4';
+window.APP_VERSION = '2026.08.29-5';
 
 // =====================================================================
 // CONFIG
@@ -779,7 +784,10 @@ function renderEtapes(ji) {
       <input type="text" placeholder="Trajet vers l'étape suivante (ex. ~20 min voiture · 20 km)" value="${escapeHtml(e.trajet_suivant||'')}"
         style="margin-top:6px;background:var(--bg4);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:11.5px;color:var(--text);width:100%"
         onchange="updateEtape(${ji},${ei},'trajet_suivant',this.value)">
-      ${e.id && e.type === 'magasin' ? `<button class="btn-add" style="margin-top:8px" onclick="openEtapeSaisie('${e.id}')">📝 Compte-rendu de visite</button>` : ''}
+      ${e.id && e.type === 'magasin' ? `<div style="display:flex;gap:6px;margin-top:8px">
+        <button class="btn-add" style="flex:1" onclick="openEtapeSaisie('${e.id}')">📝 Compte-rendu</button>
+        ${e.magasin_code ? `<button class="btn-add" style="flex:1" onclick="openFicheMagasin('${e.magasin_code}')">📊 Fiche magasin</button>` : ''}
+      </div>` : ''}
       ${!e.id ? `<div style="font-size:10.5px;color:var(--muted);margin-top:6px;font-style:italic">Enregistrez le passage pour saisir le compte-rendu de cette étape.</div>` : ''}
     </div>
   `).join('');
@@ -2002,6 +2010,111 @@ async function openEtapeSaisie(etapeId) {
 
 function closeSaisie() {
   switchView('form');
+}
+
+// =====================================================================
+// FICHE MAGASIN — score de santé, PEDLV, Kaizen... (identique à Bilan de Passage)
+// =====================================================================
+async function openFicheMagasin(magasinCode) {
+  toast('Chargement de la fiche…');
+  const container = document.getElementById('fiche-magasin-container');
+  container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--muted)">Chargement…</div>`;
+  switchView('fiche-magasin');
+  try {
+    const res = await fetch(`${API_BASE}/api/fiche-magasin?code=${encodeURIComponent(magasinCode)}`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || ('HTTP ' + res.status));
+    }
+    const f = await res.json();
+    renderFicheMagasin(f);
+  } catch (e) {
+    console.error(e);
+    container.innerHTML = `<div style="padding:20px">
+      <button class="btn-icon" onclick="switchView('form')">✕</button>
+      <div style="margin-top:20px;color:var(--red)">⚠ Impossible de charger la fiche : ${escapeHtml(e.message)}</div>
+    </div>`;
+  }
+}
+
+function pedlvColor(statut) {
+  if (statut === 'vert') return 'var(--green)';
+  if (statut === 'orange') return 'var(--orange)';
+  if (statut === 'rouge') return 'var(--red)';
+  return 'var(--muted)';
+}
+
+function ficheStatCard(label, value, sub) {
+  return `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px">
+    <div style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px">${label}</div>
+    <div style="font-size:20px;font-weight:700;margin-top:4px">${value}</div>
+    ${sub ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">${sub}</div>` : ''}
+  </div>`;
+}
+
+function renderFicheMagasin(f) {
+  const container = document.getElementById('fiche-magasin-container');
+  const score = f.healthScore;
+  const scoreColor = score === null ? 'var(--muted)' : score >= 75 ? 'var(--green)' : score >= 50 ? 'var(--orange)' : 'var(--red)';
+
+  const dernierPassage = f.lastVisitDate
+    ? `${fmtDate(f.lastVisitDate)}${f.dureeJours ? ` (${f.dureeJours}j)` : ''}`
+    : 'Jamais';
+  const prochainPassage = f.prochainPassage ? fmtDate(f.prochainPassage) : '—';
+
+  const actionsHtml = (f.actionsNonSoldees && f.actionsNonSoldees.items.length)
+    ? f.actionsNonSoldees.items.map(a => `
+        <div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-top:1px solid var(--border)">
+          <span style="color:${a.status === 'todo' ? 'var(--red)' : 'var(--orange)'};font-size:14px;line-height:1.3">●</span>
+          <span style="font-size:12.5px">${escapeHtml(a.text)}</span>
+        </div>`).join('')
+    : `<div style="color:var(--muted);font-size:12px;padding:6px 0">Aucune action en attente.</div>`;
+
+  const pedlvHtml = f.pedlv
+    ? Object.entries(f.pedlv.indicateurs || {}).map(([key, v]) => `
+        <div style="display:flex;align-items:center;gap:6px;background:var(--bg4);border-radius:7px;padding:5px 9px;font-size:11px">
+          <span style="width:8px;height:8px;border-radius:50%;background:${pedlvColor(v.statut)};display:inline-block"></span>
+          ${escapeHtml(key.toUpperCase())}
+        </div>`).join('')
+    : `<div style="color:var(--muted);font-size:12px">Pas de données PEDLV.</div>`;
+
+  container.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <button class="btn-icon" onclick="switchView('form')">✕</button>
+      <div style="flex:1">
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:19px;font-weight:700">${escapeHtml(f.magasin_libelle || f.libelle || '')}</div>
+        <div style="font-size:11.5px;color:var(--muted)">${escapeHtml(f.animateur || '')}</div>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:16px;background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:14px">
+      <div style="font-size:38px;font-weight:800;color:${scoreColor}">${score !== null ? score : '—'}<span style="font-size:16px;color:var(--muted)">/100</span></div>
+      <div style="flex:1">
+        <div style="font-size:12px;color:var(--muted)">Score de santé</div>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:6px">Dernier passage : <b style="color:var(--text)">${dernierPassage}</b></div>
+        <div style="font-size:11.5px;color:var(--muted)">Prochain passage : <b style="color:var(--text)">${prochainPassage}</b></div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+      ${ficheStatCard('Effectif', f.effectif ? f.effectif.label : '—')}
+      ${ficheStatCard('Absentéisme', f.absenteisme && f.absenteisme.score !== null ? f.absenteisme.score + '%' : '—', f.absenteisme && f.absenteisme.moisCount ? f.absenteisme.moisCount + ' mois' : '')}
+      ${ficheStatCard('Positionnement annuel', f.positionnementAnnuel !== null ? f.positionnementAnnuel + '%' : '—')}
+      ${ficheStatCard('Avis Google', f.googleRating ? f.googleRating.rating + ' ★' : '—', f.googleRating ? f.googleRating.reviewsCount + ' avis' : '')}
+      ${ficheStatCard('Niveau équipe', f.niveauEquipe !== null ? f.niveauEquipe + '/10' : '—', 'obj. ' + f.objectifNiveauEquipe)}
+      ${ficheStatCard('Kaizen (dernier clôturé)', f.kaizenDernierScoreCloture !== null ? f.kaizenDernierScoreCloture + '/' + f.kaizenDernierScoreMax : '—', f.kaizenDernierMoisCloture || '')}
+    </div>
+
+    <div class="saisie-section-title"><span class="ic">⚠️</span> Actions non soldées ${f.actionsNonSoldees ? `(${f.actionsNonSoldees.count})` : ''}</div>
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:14px">
+      ${actionsHtml}
+    </div>
+
+    <div class="saisie-section-title"><span class="ic">🚦</span> Indicateurs PEDLV</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px">
+      ${pedlvHtml}
+    </div>
+  `;
 }
 
 function themeSectionHtml(categorie, label, icon) {
