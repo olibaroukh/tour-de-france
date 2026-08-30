@@ -232,7 +232,7 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 <div id="toast" class="toast" style="display:none"></div>
 
 <script>
-window.APP_VERSION = '2026.08.29-5';
+window.APP_VERSION = '2026.08.29-6';
 
 // =====================================================================
 // CONFIG
@@ -2098,7 +2098,7 @@ function renderFicheMagasin(f) {
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
       ${ficheStatCard('Effectif', f.effectif ? f.effectif.label : '—')}
-      ${ficheStatCard('Absentéisme', f.absenteisme && f.absenteisme.score !== null ? f.absenteisme.score + '%' : '—', f.absenteisme && f.absenteisme.moisCount ? f.absenteisme.moisCount + ' mois' : '')}
+      ${ficheStatCard('Absentéisme', f.absenteisme && f.absenteisme.score !== null ? (Math.round((100 - f.absenteisme.score) * 10) / 10) + '%' : '—', f.absenteisme && f.absenteisme.moisCount ? f.absenteisme.moisCount + ' mois' : '')}
       ${ficheStatCard('Positionnement annuel', f.positionnementAnnuel !== null ? f.positionnementAnnuel + '%' : '—')}
       ${ficheStatCard('Avis Google', f.googleRating ? f.googleRating.rating + ' ★' : '—', f.googleRating ? f.googleRating.reviewsCount + ' avis' : '')}
       ${ficheStatCard('Niveau équipe', f.niveauEquipe !== null ? f.niveauEquipe + '/10' : '—', 'obj. ' + f.objectifNiveauEquipe)}
