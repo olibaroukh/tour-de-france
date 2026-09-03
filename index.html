@@ -232,7 +232,7 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 <div id="toast" class="toast" style="display:none"></div>
 
 <script>
-window.APP_VERSION = '2026.08.30-1';
+window.APP_VERSION = '2026.09.03-1';
 
 // =====================================================================
 // CONFIG
@@ -2169,10 +2169,16 @@ function renderSaisieScreen() {
         const previChips = previYears.map(y => `<div class="collab-ca-chip"><b>${c.previsionnel[y].toLocaleString('fr-FR')} €</b>Prévi ${y}</div>`).join('');
         const evolChip = (c.evolution_pct !== null && c.evolution_pct !== undefined)
           ? `<div class="collab-ca-chip"><b>${(c.evolution_pct*100).toFixed(1)}%</b>Évolution</div>` : '';
+        const longueDureeBadge = c.longue_duree
+          ? `<div style="display:flex;align-items:center;gap:6px;background:rgba(204,23,25,0.1);border:1px solid var(--red);border-radius:7px;padding:5px 9px;font-size:11px;color:var(--red);font-weight:600;margin-top:6px">
+              <span style="width:7px;height:7px;border-radius:50%;background:var(--red);display:inline-block"></span>
+              Absence longue durée${c.longue_duree_mois ? ` (au ${c.longue_duree_mois})` : ''}
+            </div>` : '';
         return `
           <div class="collab-card">
             <div class="cc-nom">${escapeHtml(c.prenom)} ${escapeHtml(c.nom)}</div>
             <div class="collab-ca-row">${caChips}${previChips}${evolChip}</div>
+            ${longueDureeBadge}
             <textarea placeholder="Notes d'entretien (dictée vocale disponible)…" oninput="updateEntretienNote('${key}', this.value)">${escapeHtml(saisieState.entretiens[key] || '')}</textarea>
           </div>`;
       }).join('')
