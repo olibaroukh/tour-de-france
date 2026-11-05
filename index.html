@@ -232,14 +232,14 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 <div id="toast" class="toast" style="display:none"></div>
 
 <script>
-window.APP_VERSION = '2026.09.03-2';
+window.APP_VERSION = '2026.11.05-1';
 
 // =====================================================================
 // CONFIG
 // =====================================================================
 // À ajuster : URL brute GitHub du magasins.csv (même référentiel que Bilan de Passage).
 const CSV_URL = localStorage.getItem('tdf_csv_url') ||
-  'https://raw.githubusercontent.com/olibaroukh/bilan-passage/main/magasins.csv';
+  'https://zimbra-relay.oli-baroukh.workers.dev/referentiel/magasins.csv';
 // À ajuster une fois le Worker Tour de France déployé (voir worker.js fourni séparément).
 const API_BASE = localStorage.getItem('tdf_api_base') || 'https://tour-de-france-api.oli-baroukh.workers.dev';
 
