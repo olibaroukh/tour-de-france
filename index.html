@@ -232,7 +232,7 @@ html,body{height:100%;background:linear-gradient(160deg,#1A1210 0%,#0D0D0D 40%,#
 <div id="toast" class="toast" style="display:none"></div>
 
 <script>
-window.APP_VERSION = '2026.11.05-1';
+window.APP_VERSION = '2026.11.25-1';
 
 // =====================================================================
 // CONFIG
@@ -454,11 +454,13 @@ function escapeHtml(s) {
 // =====================================================================
 // VUE MAGASINS
 // =====================================================================
+// 25/11/2026 : recherche sans accents, majuscules ni ponctuation (Vélizy = velizy, Écoles = ecoles)
+function rechercheNorm(t) { return String(t == null ? '' : t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/œ/g, 'oe').replace(/æ/g, 'ae').replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim(); }
 function renderMagasinsList(filter) {
-  const q = (filter ?? document.getElementById('magasin-search').value ?? '').toLowerCase();
+  const q = rechercheNorm(filter ?? document.getElementById('magasin-search').value ?? '');
   const rows = state.magasins.filter(m => {
     if (!q) return true;
-    return (m.libelle + ' ' + m.animateur + ' ' + m.code).toLowerCase().includes(q);
+    return rechercheNorm(m.libelle + ' ' + m.animateur + ' ' + m.code).includes(q);
   });
   const el = document.getElementById('magasins-list');
   if (!rows.length) {
@@ -835,9 +837,9 @@ function setPickerTab(tab) {
 }
 function renderPickerResults() {
   const body = document.getElementById('picker-body');
-  const q = document.getElementById('picker-search').value.toLowerCase();
+  const q = rechercheNorm(document.getElementById('picker-search').value);
   if (state.pickerTab === 'succ') {
-    const rows = state.magasins.filter(m => !q || (m.libelle + m.code).toLowerCase().includes(q)).slice(0, 30);
+    const rows = state.magasins.filter(m => !q || rechercheNorm(m.libelle + ' ' + m.code).includes(q)).slice(0, 30);
     body.innerHTML = rows.map(m => `
       <div class="magasin-row" style="cursor:pointer" onclick="pickSuccursale('${m.code}')">
         <div style="flex:1"><div class="mr-nom">${escapeHtml(titleCaseLibelle(m.libelle))}</div>
